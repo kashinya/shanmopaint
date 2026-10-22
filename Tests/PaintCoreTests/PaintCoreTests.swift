@@ -721,5 +721,143 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(e.canvas[0, 0], blue, "右ボタンは輪郭が背景色")
         XCTAssertEqual(e.canvas[5, 5], red, "塗りは描画色")
     }
+
+    // MARK: Skitch 風の注釈
+
+    /// テスト用：注釈の範囲を色で塗るだけの描画関数
+    private func fakeRenderer(_ a: Annotation) -> RenderedAnnotation? {
+        switch a.shape {
+        case .arrow(let t, let h):
+            let r = IRect.spanning(t, h)
+            return RenderedAnnotation(image: Bitmap(width: r.width, height: r.height, fill: a.color), origin: r.origin)
+        case .stamp(_, let c, let rad):
+            return RenderedAnnotation(image: Bitmap(width: rad * 2, height: rad * 2, fill: a.color),
+                                      origin: IPoint(c.x - rad, c.y - rad))
+        }
+    }
+
+    func testArrowFloatsThenCommitsOnNextClick() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = fakeRenderer
+        e.primary = red
+        e.setTool(.arrow)
+        e.mouseDown(at: cp(10, 10), button: .primary)
+        e.mouseDragged(to: cp(40, 30))
+        e.mouseUp(at: cp(40, 30))
+        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(10, 10), head: IPoint(40, 30)))
+        XCTAssertEqual(e.canvas[20, 20], Colors.white, "浮いている間はキャンバスに描かない")
+        XCTAssertEqual(e.renderDisplay()[20, 20], red)
+        XCTAssertEqual(e.flattened()[20, 20], red, "保存には含める")
+        // 先端をつまんで動かす
+        e.mouseDown(at: cp(40, 30), button: .primary)
+        e.mouseDragged(to: cp(50, 60))
+        e.mouseUp(at: cp(50, 60))
+        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(10, 10), head: IPoint(50, 60)))
+        // パレットで色を変える
+        e.primary = blue
+        XCTAssertEqual(e.annotation?.color, blue)
+        // 何もない所をクリック → 確定して、クリックだけなので新しい矢印は置かない
+        e.mouseDown(at: cp(90, 5), button: .primary)
+        e.mouseUp(at: cp(90, 5))
+        XCTAssertNil(e.annotation)
+        XCTAssertEqual(e.canvas[30, 40], blue)
+        e.undo()
+        XCTAssertEqual(e.canvas[30, 40], Colors.white)
+    }
+
+    func testArrowBodyDragMoves() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = fakeRenderer
+        e.setTool(.arrow)
+        e.mouseDown(at: cp(10, 50), button: .primary)
+        e.mouseDragged(to: cp(60, 50))
+        e.mouseUp(at: cp(60, 50))
+        XCTAssertEqual(e.annotationPart(at: cp(30, 50)), .body)
+        e.mouseDown(at: cp(30, 50), button: .primary)
+        e.mouseDragged(to: cp(35, 60))
+        e.mouseUp(at: cp(35, 60))
+        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(15, 60), head: IPoint(65, 60)))
+        e.nudgeAnnotation(dx: 1, dy: 1)
+        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(16, 61), head: IPoint(66, 61)))
+    }
+
+    func testStampPlaceResizeAndKindChange() {
+        let e = makeEngine(200, 200)
+        e.annotationRenderer = fakeRenderer
+        e.setTool(.stamp)
+        e.options.stampKind = .check
+        e.mouseDown(at: cp(100, 100), button: .primary)
+        e.mouseUp(at: cp(100, 100))
+        XCTAssertEqual(e.annotation?.shape, .stamp(.check, center: IPoint(100, 100), radius: Annotation.defaultStampRadius))
+        XCTAssertEqual(e.annotation?.color, StampKind.check.defaultColor)
+        // 角をつまんで大きく
+        let corner = e.annotation!.handles[2]
+        XCTAssertEqual(e.annotationPart(at: corner), .resize)
+        e.mouseDown(at: corner, button: .primary)
+        e.mouseDragged(to: cp(140, 140))
+        e.mouseUp(at: cp(140, 140))
+        XCTAssertEqual(e.annotation?.shape, .stamp(.check, center: IPoint(100, 100), radius: 40))
+        // オプションで種類を変える
+        e.options.stampKind = .star
+        XCTAssertEqual(e.annotation?.shape, .stamp(.star, center: IPoint(100, 100), radius: 40))
+        XCTAssertEqual(e.annotation?.color, StampKind.star.defaultColor)
+        // 道具を替えると確定
+        e.setTool(.pencil)
+        XCTAssertNil(e.annotation)
+        XCTAssertEqual(e.canvas[100, 100], StampKind.star.defaultColor)
+    }
+
+    func testStampDragSizesOnPlacement() {
+        let e = makeEngine(200, 200)
+        e.annotationRenderer = fakeRenderer
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseDragged(to: cp(80, 60))
+        e.mouseUp(at: cp(80, 60))
+        XCTAssertEqual(e.annotation?.shape, .stamp(.cross, center: IPoint(50, 50), radius: 30))
+    }
+
+    func testUndoRemovesFloatingAnnotationAndDeleteKey() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = fakeRenderer
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        XCTAssertTrue(e.canUndo)
+        e.undo()
+        XCTAssertNil(e.annotation)
+        XCTAssertEqual(e.canvas, solid(100, 100, Colors.white))
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        e.deleteAnnotation()
+        XCTAssertNil(e.annotation)
+        e.setTool(.pencil)
+        XCTAssertEqual(e.canvas, solid(100, 100, Colors.white))
+    }
+
+    func testPasteCommitsAnnotationFirst() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = fakeRenderer
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        e.paste(solid(10, 10, blue), visibleOrigin: IPoint(0, 0))
+        XCTAssertNil(e.annotation)
+        XCTAssertEqual(e.canvas[50, 50], StampKind.cross.defaultColor)
+        XCTAssertEqual(e.canvas.size, ISize(100, 100), "注釈を描いたのでまっさら扱いではない")
+    }
+
+    func testTextBackgroundRect() {
+        let e = makeEngine(100, 60)
+        e.setTool(.text)
+        e.mouseDown(at: cp(10, 10), button: .primary)
+        e.mouseDragged(to: cp(50, 40))
+        e.mouseUp(at: cp(50, 40))
+        e.secondary = blue
+        let glyphs = Bitmap(width: 61, height: 51, fill: Colors.clear)
+        e.commitText(glyphs, at: IPoint(0, 0), background: IRect(x: 10, y: 10, width: 41, height: 31))
+        XCTAssertEqual(e.canvas[10, 10], blue)
+        XCTAssertEqual(e.canvas[5, 5], Colors.white, "余白は塗らない")
+    }
 }
 

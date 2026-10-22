@@ -23,7 +23,11 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     }
     private lazy var fontPanel: FontPanelController = {
         let c = FontPanelController(style: textStyle)
-        c.onChange = { [weak self] s in self?.textStyle = s }
+        c.onChange = { [weak self] s in
+            guard let self = self else { return }
+            if s.outline && !self.textStyle.outline { self.engine.options.transparentBackground = true }
+            self.textStyle = s
+        }
         return c
     }()
 
@@ -49,6 +53,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         mainView.colorBox.onEditColor = { [weak self] i in self?.editColor(index: i) }
         mainView.colorBox.onHover = { [weak self] s in self?.statusBar.hint = s }
         engine.listener = { [weak self] e in self?.handle(e) }
+        engine.annotationRenderer = AnnotationRenderer.render
         engine.fitCanvasToPasteWhenPristine = UserDefaults.standard.object(forKey: "fitCanvasToPaste") as? Bool ?? true
 
         updateTitle()
@@ -122,8 +127,10 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             engine.cancelText()
             return
         }
-        if let bmp = textStyle.render(s, width: box.width, minHeight: box.height, color: Win98.color(engine.primary)) {
-            engine.commitText(bmp, at: box.origin)
+        if let r = textStyle.render(s, width: box.width, minHeight: box.height, color: Win98.color(engine.primary)) {
+            // ふち取り・影の分だけ外側に余白がある。不透明の背景は枠の中だけ塗る
+            engine.commitText(r.image, at: IPoint(box.x - r.margin, box.y - r.margin),
+                              background: IRect(x: box.x, y: box.y, width: box.width, height: r.image.height - 2 * r.margin))
         } else {
             engine.cancelText()
         }
@@ -253,7 +260,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
 
     @objc func delete(_ sender: Any?) {
         commitText()
-        engine.deleteSelection()
+        if engine.annotation != nil { engine.deleteAnnotation() } else { engine.deleteSelection() }
     }
 
     @objc func selectAll(_ sender: Any?) {
@@ -539,7 +546,9 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         case #selector(paintRedo(_:)):
             if isEditingText, canvasView.textView?.undoManager?.canRedo == true { return true }
             return engine.canRedo
-        case #selector(cut(_:)), #selector(delete(_:)), #selector(cropToSelection(_:)):
+        case #selector(delete(_:)):
+            return engine.hasSelection || engine.annotation != nil
+        case #selector(cut(_:)), #selector(cropToSelection(_:)):
             return engine.hasSelection
         case #selector(copyToFile(_:)):
             item.title = engine.hasSelection ? "選択範囲をファイルへ保存…" : "画像をファイルへ保存…"

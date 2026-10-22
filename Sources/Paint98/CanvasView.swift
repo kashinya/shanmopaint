@@ -113,6 +113,21 @@ final class CanvasView: NSView, NSTextViewDelegate {
             }
         }
         if let tb = engine.textBox { dotted(viewRect(tb).insetBy(dx: -1, dy: -1)) }
+        if let a = engine.annotation, engine.tool == .arrow || engine.tool == .stamp {
+            if case .stamp(_, let c, let r) = a.shape {
+                dotted(viewRect(IRect(x: c.x - r, y: c.y - r, width: 2 * r + 1, height: 2 * r + 1)))
+            }
+            for hp in a.handles {
+                let p = NSPoint(x: Self.inset + CGFloat(hp.x) * zoom, y: Self.inset + CGFloat(hp.y) * zoom)
+                let r = NSRect(x: p.x - 3.5, y: p.y - 3.5, width: 7, height: 7)
+                NSColor.white.setFill()
+                r.fill()
+                Win98.navy.setStroke()
+                let b = NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5))
+                b.lineWidth = 1
+                b.stroke()
+            }
+        }
 
         if engine.tool == .eraser, let h = hover, !(textView != nil) {
             let cp = canvasPoint(h).pixel
@@ -124,7 +139,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
             path.stroke()
         }
 
-        if engine.selection == nil && textView == nil {
+        if engine.selection == nil && textView == nil && engine.annotation == nil {
             Win98.navy.setFill()
             for h in [CanvasHandle.right, .bottom, .corner] { handleRect(h).fill() }
         }
@@ -171,7 +186,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
     }
 
     private func canvasHandle(at p: NSPoint) -> CanvasHandle? {
-        guard engine.selection == nil, textView == nil else { return nil }
+        guard engine.selection == nil, textView == nil, engine.annotation == nil else { return nil }
         for h in [CanvasHandle.corner, .right, .bottom] where handleRect(h).insetBy(dx: -4, dy: -4).contains(p) {
             return h
         }
@@ -312,6 +327,12 @@ final class CanvasView: NSView, NSTextViewDelegate {
             }
             if sel.frame.contains(cp.pixel) { return dragging ? .closedHand : .openHand }
         }
+        if let part = engine.annotationPart(at: cp) {
+            switch part {
+            case .body: return dragging ? .closedHand : .openHand
+            default: return .crosshair
+            }
+        }
         return Icons.cursor(for: engine.tool)
     }
 
@@ -350,12 +371,22 @@ final class CanvasView: NSView, NSTextViewDelegate {
     override func keyDown(with event: NSEvent) {
         let step = event.modifierFlags.contains(.shift) ? 10 : 1
         switch event.keyCode {
+        case 123 where engine.annotation != nil: engine.nudgeAnnotation(dx: -step, dy: 0)
+        case 124 where engine.annotation != nil: engine.nudgeAnnotation(dx: step, dy: 0)
+        case 125 where engine.annotation != nil: engine.nudgeAnnotation(dx: 0, dy: step)
+        case 126 where engine.annotation != nil: engine.nudgeAnnotation(dx: 0, dy: -step)
         case 123 where engine.hasSelection: engine.nudgeSelection(dx: -step, dy: 0)
         case 124 where engine.hasSelection: engine.nudgeSelection(dx: step, dy: 0)
         case 125 where engine.hasSelection: engine.nudgeSelection(dx: 0, dy: step)
         case 126 where engine.hasSelection: engine.nudgeSelection(dx: 0, dy: -step)
         case 51, 117: // delete / forward delete
-            if engine.hasSelection { engine.deleteSelection() } else { NSSound.beep() }
+            if engine.annotation != nil {
+                engine.deleteAnnotation()
+            } else if engine.hasSelection {
+                engine.deleteSelection()
+            } else {
+                NSSound.beep()
+            }
         case 53, 36, 76: // esc / return / enter
             engine.finishPending()
         default:
@@ -418,7 +449,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
     func applyTextStyle() {
         guard let tv = textView, let controller = controller else { return }
         let style = controller.textStyle
-        let attrs = style.attributes(scale: zoom, color: Win98.color(engine.primary))
+        let attrs = style.previewAttributes(scale: zoom, color: Win98.color(engine.primary))
         tv.font = attrs[.font] as? NSFont
         tv.textColor = Win98.color(engine.primary)
         tv.insertionPointColor = Win98.color(engine.primary)

@@ -7,6 +7,8 @@ public enum Tool: String, CaseIterable {
     case line, curve
     case rectangle, polygon
     case ellipse, roundedRectangle
+    /// Skitch 風の矢印・スタンプ
+    case arrow, stamp
 }
 
 public enum MouseButton {
@@ -48,6 +50,9 @@ public struct ToolOptions: Equatable {
     public var magnification = 4
     /// 選択範囲・テキストの背景を透明にする（背景色の画素を描かない）
     public var transparentBackground = false
+    /// Skitch 風の矢印の太さ（1〜3）
+    public var arrowThickness = 2
+    public var stampKind: StampKind = .cross
 
     public init() {}
 
@@ -56,6 +61,7 @@ public struct ToolOptions: Equatable {
     public static let lineWidths = [1, 2, 3, 4, 5]
     public static let airbrushRadii = [4, 8, 12]
     public static let magnifications = [1, 2, 4, 6, 8]
+    public static let arrowThicknesses = [1, 2, 3]
 }
 
 /// ペイントの中身（キャンバス・道具・選択範囲・履歴）。UI に依存しない。
@@ -63,7 +69,11 @@ public struct ToolOptions: Equatable {
 public final class PaintEngine {
     public private(set) var canvas: Bitmap
     public var primary: Pixel = Colors.black {
-        didSet { emit(.colors); if selection != nil && options.transparentBackground { emit(.display) } }
+        didSet {
+            emit(.colors)
+            if selection != nil && options.transparentBackground { emit(.display) }
+            if annotation != nil && primary != oldValue { annotation!.color = primary; emit(.display) }
+        }
     }
     public var secondary: Pixel = Colors.white {
         didSet { emit(.colors); if selection != nil && options.transparentBackground { emit(.display) } }
@@ -73,6 +83,18 @@ public final class PaintEngine {
     public var options = ToolOptions() {
         didSet {
             if oldValue.transparentBackground != options.transparentBackground { emit(.display) }
+            if var a = annotation {
+                switch a.shape {
+                case .arrow:
+                    a.thickness = options.arrowThickness
+                case .stamp(_, let c, let r):
+                    if oldValue.stampKind != options.stampKind {
+                        a.shape = .stamp(options.stampKind, center: c, radius: r)
+                        a.color = options.stampKind.defaultColor
+                    }
+                }
+                if a != annotation { annotation = a; emit(.display); emit(.selection) }
+            }
             emit(.tool)
         }
     }
@@ -94,6 +116,14 @@ public final class PaintEngine {
     public private(set) var isPristine = true
     /// ドラッグ中の図形・枠の大きさ（ステータスバー用）。
     public private(set) var liveSize: ISize?
+    /// 浮いている注釈（矢印・スタンプ）。
+    public private(set) var annotation: Annotation? {
+        didSet { if annotation != oldValue { renderedAnnotation = nil } }
+    }
+    /// 注釈を画像にする関数（UI が CoreGraphics で描く）。nil なら注釈は表示も確定もされない。
+    public var annotationRenderer: ((Annotation) -> RenderedAnnotation?)? {
+        didSet { renderedAnnotation = nil }
+    }
 
     public var listener: ((EngineEvent) -> Void)?
     public var rng = SplitMix64(seed: UInt64.random(in: 0...UInt64.max))
@@ -103,6 +133,7 @@ public final class PaintEngine {
     private var overlay: ((inout Bitmap) -> Void)?
     private var polygon: PolygonState?
     private var curve: CurveState?
+    private var renderedAnnotation: RenderedAnnotation?
 
     private enum Drag {
         case stroke(button: MouseButton, last: IPoint)
@@ -116,6 +147,8 @@ public final class PaintEngine {
         case text(start: IPoint)
         case polygonSegment
         case curvePoint
+        case annotation(part: Annotation.Part, start: CanvasPoint, original: Annotation)
+        case stampPlace(center: IPoint)
     }
 
     private struct PolygonState {
@@ -140,7 +173,7 @@ public final class PaintEngine {
 
     // MARK: - 状態
 
-    public var canUndo: Bool { history.canUndo || selection?.recorded == true }
+    public var canUndo: Bool { history.canUndo || selection?.recorded == true || annotation != nil }
     public var canRedo: Bool { history.canRedo }
     public var hasSelection: Bool { selection != nil }
     public var isAirbrushing: Bool {
@@ -149,13 +182,15 @@ public final class PaintEngine {
     }
     public var isDragging: Bool { drag != nil }
     /// 多角形・曲線を描いている途中か。
-    public var hasPendingShape: Bool { polygon != nil || curve != nil }
+    public var hasPendingShape: Bool { polygon != nil || curve != nil || annotation != nil }
 
-    /// 保存・印刷用：浮いている選択範囲を重ねた画像（状態は変えない）。
+    /// 保存・印刷用：浮いている選択範囲や注釈を重ねた画像（状態は変えない）。
     public func flattened() -> Bitmap {
-        guard let sel = selection, sel.lifted else { return canvas }
+        let ann = annotation.flatMap { renderAnnotation($0) }
+        if !(selection?.lifted ?? false) && ann == nil { return canvas }
         var out = canvas
-        composite(sel, onto: &out)
+        if let sel = selection, sel.lifted { composite(sel, onto: &out) }
+        if let r = ann { out.drawPremultiplied(r.image, at: r.origin) }
         return out
     }
 
@@ -168,9 +203,11 @@ public final class PaintEngine {
 
     /// 画面に出す画像（浮いている選択範囲やドラッグ中の図形を重ねたもの）。
     public func renderDisplay() -> Bitmap {
-        if overlay == nil && !(selection?.lifted ?? false) { return canvas }
+        let ann = annotation.flatMap { renderAnnotation($0) }
+        if overlay == nil && !(selection?.lifted ?? false) && ann == nil { return canvas }
         var out = canvas
         if let sel = selection, sel.lifted { composite(sel, onto: &out) }
+        if let r = ann { out.drawPremultiplied(r.image, at: r.origin) }
         overlay?(&out)
         return out
     }
@@ -285,6 +322,27 @@ public final class PaintEngine {
             }
             drag = .curvePoint
             updateCurveOverlay()
+        case .arrow, .stamp:
+            if let a = annotation {
+                if let part = annotationPart(at: cp) {
+                    drag = .annotation(part: part, start: cp, original: a)
+                    emit(.selection)
+                    return
+                }
+                commitAnnotation()
+            }
+            if tool == .arrow {
+                let a = Annotation(shape: .arrow(tail: p, head: p), color: fg, thickness: options.arrowThickness)
+                annotation = a
+                drag = .annotation(part: .head, start: cp, original: a)
+            } else {
+                let k = options.stampKind
+                annotation = Annotation(shape: .stamp(k, center: p, radius: Annotation.defaultStampRadius),
+                                        color: button == .primary ? k.defaultColor : secondary, thickness: 0)
+                drag = .stampPlace(center: p)
+            }
+            emit(.selection)
+            emit(.display)
         }
     }
 
@@ -359,6 +417,20 @@ public final class PaintEngine {
             }
             curve = c
             updateCurveOverlay()
+        case .annotation(let part, let start, let original):
+            let dx = Int((cp.x - start.x).rounded()), dy = Int((cp.y - start.y).rounded())
+            annotation = original.adjusted(part, dx: dx, dy: dy, pointer: p, constrain: shift)
+            emit(.selection)
+            emit(.display)
+        case .stampPlace(let c):
+            guard var a = annotation, case .stamp(let k, _, _) = a.shape else { return }
+            let d = max(abs(p.x - c.x), abs(p.y - c.y))
+            if d > 6 {
+                a.shape = .stamp(k, center: c, radius: max(Annotation.minStampRadius, d))
+                annotation = a
+                emit(.selection)
+                emit(.display)
+            }
         }
     }
 
@@ -439,6 +511,13 @@ public final class PaintEngine {
             default:
                 commitCurve()
             }
+        case .annotation, .stampPlace:
+            // ドラッグせずにクリックしただけの矢印は置かない
+            if let a = annotation, case .arrow = a.shape, a.arrowLength < 4 {
+                annotation = nil
+                emit(.display)
+            }
+            emit(.selection)
         }
     }
 
@@ -461,6 +540,47 @@ public final class PaintEngine {
             if abs(cp.x - c.x) <= tol && abs(cp.y - c.y) <= tol { return h }
         }
         return nil
+    }
+
+    /// 浮いている注釈のどこに当たるか（cp はキャンバス座標）。
+    public func annotationPart(at cp: CanvasPoint) -> Annotation.Part? {
+        guard let a = annotation, tool == .arrow || tool == .stamp else { return nil }
+        return a.part(at: cp, tolerance: max(5.0 / zoom, 1.0))
+    }
+
+    /// 浮いている注釈をキャンバスに焼き込む。
+    public func commitAnnotation() {
+        guard let a = annotation else { return }
+        annotation = nil
+        if let r = renderAnnotation(a) {
+            history.push(canvas)
+            canvas.drawPremultiplied(r.image, at: r.origin)
+            changed()
+        }
+        emit(.selection)
+        emit(.display)
+    }
+
+    /// 浮いている注釈を消す（delete キー）。
+    public func deleteAnnotation() {
+        guard annotation != nil else { return }
+        annotation = nil
+        emit(.selection)
+        emit(.display)
+    }
+
+    public func nudgeAnnotation(dx: Int, dy: Int) {
+        guard let a = annotation else { return }
+        annotation = a.moved(dx: dx, dy: dy)
+        emit(.selection)
+        emit(.display)
+    }
+
+    private func renderAnnotation(_ a: Annotation) -> RenderedAnnotation? {
+        if a == annotation, let r = renderedAnnotation { return r }
+        let r = annotationRenderer?(a)
+        if a == annotation { renderedAnnotation = r }
+        return r
     }
 
     // MARK: - 選択範囲とクリップボード
@@ -489,7 +609,7 @@ public final class PaintEngine {
     /// コピーする画像。選択範囲があればその中身、なければキャンバス全体。
     public func copyImage() -> Bitmap {
         if let sel = selection { return clipboardImage(sel) }
-        return canvas
+        return flattened()
     }
 
     /// 切り取り。選択範囲がなければ何もしない。
@@ -637,6 +757,7 @@ public final class PaintEngine {
         polygon = nil
         curve = nil
         selection = nil
+        annotation = nil
         marquee = nil
         textBox = nil
         history.reset()
@@ -664,11 +785,12 @@ public final class PaintEngine {
     // MARK: - テキスト
 
     /// UI が描いたテキスト画像（乗算済みアルファ）を確定する。
-    public func commitText(_ rendered: Bitmap, at origin: IPoint) {
+    /// background は不透明モードで背景色に塗る範囲（省略時は画像の範囲）。
+    public func commitText(_ rendered: Bitmap, at origin: IPoint, background: IRect? = nil) {
         textBox = nil
         history.push(canvas)
         if !options.transparentBackground {
-            canvas.fill(IRect(origin: origin, size: rendered.size), with: secondary)
+            canvas.fill(background ?? IRect(origin: origin, size: rendered.size), with: secondary)
         }
         canvas.drawPremultiplied(rendered, at: origin)
         changed()
@@ -691,6 +813,14 @@ public final class PaintEngine {
     // MARK: - 元に戻す
 
     public func undo() {
+        if annotation != nil {
+            // 置いたばかりの注釈を取り消す
+            annotation = nil
+            drag = nil
+            emit(.selection)
+            emit(.display)
+            return
+        }
         polygon = nil
         curve = nil
         overlay = nil
@@ -712,6 +842,7 @@ public final class PaintEngine {
     }
 
     public func redo() {
+        commitAnnotation()
         commitSelection()
         polygon = nil
         curve = nil
@@ -763,6 +894,7 @@ public final class PaintEngine {
         drag = nil
         marquee = nil
         liveSize = nil
+        commitAnnotation()
         commitSelection()
         if polygon != nil { closePolygon() }
         if curve != nil { commitCurve() }

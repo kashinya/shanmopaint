@@ -31,8 +31,10 @@ final class ToolboxView: NSView {
                       width: Self.buttonSize, height: Self.buttonSize)
     }
 
+    static var rows: Int { (Tool.allCases.count + 1) / 2 }
+
     var optionsRect: NSRect {
-        let top = gridOrigin.y + 8 * Self.buttonSize + 6
+        let top = gridOrigin.y + CGFloat(Self.rows) * Self.buttonSize + 6
         return NSRect(x: (bounds.width - 44) / 2, y: top, width: 44, height: 70)
     }
 
@@ -102,6 +104,8 @@ enum ToolInfo {
         case .polygon: return "多角形"
         case .ellipse: return "楕円"
         case .roundedRectangle: return "角の丸い四角形"
+        case .arrow: return "矢印（Skitch 風）"
+        case .stamp: return "スタンプ（Skitch 風）"
         }
     }
 
@@ -123,6 +127,8 @@ enum ToolInfo {
         case .polygon: return "クリックで頂点を足し、ダブルクリックか始点クリックで閉じます。"
         case .ellipse: return "楕円を描きます。shift で正円。"
         case .roundedRectangle: return "角の丸い四角形を描きます。shift で正方形。"
+        case .arrow: return "ドラッグで矢印。置いたあとも先端・根元・本体をつまんで直せます。色はパレットで。外側をクリックで確定。"
+        case .stamp: return "クリックでスタンプ（ドラッグで大きさ）。角をつまんで拡大縮小、本体で移動。外側をクリックで確定。"
         }
     }
 }
@@ -260,6 +266,31 @@ enum OptionsLayout {
                 e.options.lineWidth = e.options.lineWidth % 5 + 1
             }))
             return out
+        case .arrow:
+            return zip(rows(3), ToolOptions.arrowThicknesses).map { rr, t in
+                Item(rect: rr, selected: o.arrowThickness == t, draw: { rect, sel in
+                    guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+                    let w = CGFloat(Annotation.arrowWidth(t)) * 0.55
+                    if let path = AnnotationRenderer.arrowPath(tail: CGPoint(x: rect.minX + 4, y: rect.midY),
+                                                               head: CGPoint(x: rect.maxX - 4, y: rect.midY), width: w) {
+                        ctx.addPath(path)
+                        ctx.setFillColor((sel ? Win98.highlight : Win98.text).cgColor)
+                        ctx.fillPath()
+                    }
+                }, apply: { $0.options.arrowThickness = t })
+            }
+        case .stamp:
+            let kinds = StampKind.allCases
+            let rh = r.height / 3, cw = r.width / 2
+            return kinds.enumerated().map { i, k in
+                let rr = NSRect(x: r.minX + CGFloat(i % 2) * cw, y: r.minY + CGFloat(i / 2) * rh, width: cw, height: rh)
+                return Item(rect: rr, selected: o.stampKind == k, draw: { rect, _ in
+                    guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+                    let rad = min(rect.width, rect.height) / 2 - 1.5
+                    AnnotationRenderer.drawStamp(k, in: ctx, center: CGPoint(x: rect.midX, y: rect.midY), radius: rad,
+                                                 color: Win98.color(k.defaultColor).cgColor, shadow: false)
+                }, apply: { $0.options.stampKind = k })
+            }
         case .pencil, .fill, .picker:
             return []
         }

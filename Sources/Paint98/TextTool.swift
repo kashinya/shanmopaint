@@ -10,6 +10,11 @@ struct TextStyle: Equatable {
     var underline = false
     /// なめらか（アンチエイリアス）。オフにすると Win98 っぽいギザギザ文字。
     var smooth = true
+    /// Skitch 風：白いふち取りと影
+    var outline = false
+
+    /// ふち取りの太さ（ピクセル）
+    var outlineWidth: CGFloat { max(2, (size * 0.12).rounded()) }
 
     static var defaultFamily: String {
         let families = NSFontManager.shared.availableFontFamilies
@@ -37,9 +42,26 @@ struct TextStyle: Equatable {
         return a
     }
 
+    /// 入力中の見た目（ふち取りは近似：塗り＋細い白ふち＋影）。
+    func previewAttributes(scale: CGFloat, color: NSColor) -> [NSAttributedString.Key: Any] {
+        var a = attributes(scale: scale, color: color)
+        if outline {
+            a[.strokeColor] = NSColor.white
+            a[.strokeWidth] = -4.0
+            let sh = NSShadow()
+            sh.shadowOffset = NSSize(width: 0, height: -2 * scale)
+            sh.shadowBlurRadius = 3 * scale
+            sh.shadowColor = NSColor(white: 0, alpha: 0.45)
+            a[.shadow] = sh
+        }
+        return a
+    }
+
     /// 文字列を幅 width で折り返して、乗算済みアルファの Bitmap に描く。
-    func render(_ text: String, width: Int, minHeight: Int, color: NSColor) -> Bitmap? {
-        let storage = NSTextStorage(string: text, attributes: attributes(scale: 1, color: color))
+    /// ふち取り・影の分、四方に margin ピクセルの余白を付けて返す（文字の原点は (margin, margin)）。
+    func render(_ text: String, width: Int, minHeight: Int, color: NSColor) -> (image: Bitmap, margin: Int)? {
+        let attrs = attributes(scale: 1, color: color)
+        let storage = NSTextStorage(string: text, attributes: attrs)
         let layout = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(width: CGFloat(width), height: CGFloat.greatestFiniteMagnitude))
         container.lineFragmentPadding = 0
@@ -48,13 +70,33 @@ struct TextStyle: Equatable {
         layout.ensureLayout(for: container)
         let used = layout.usedRect(for: container)
         let height = max(minHeight, Int(used.maxY.rounded(.up)))
-        return BitmapIO.renderPremultiplied(width: width, height: height, antialias: smooth) { ctx in
+        let margin = outline ? Int(outlineWidth) + 8 : 0
+        let glyphs = layout.glyphRange(for: container)
+        let ow = outlineWidth
+        let outlined = outline
+        let image = BitmapIO.renderPremultiplied(width: width + 2 * margin, height: height + 2 * margin, antialias: smooth) { ctx in
             let g = NSGraphicsContext(cgContext: ctx, flipped: true)
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = g
-            layout.drawGlyphs(forGlyphRange: layout.glyphRange(for: container), at: .zero)
+            let origin = NSPoint(x: margin, y: margin)
+            if outlined {
+                // 1 回目：影つきの太い白ふち（strokeWidth は文字サイズに対する % で、正の値は線だけ）
+                let full = NSRange(location: 0, length: storage.length)
+                storage.addAttributes([.strokeColor: NSColor.white, .strokeWidth: (ow * 2) / max(1, self.size) * 100], range: full)
+                ctx.setShadow(offset: CGSize(width: 0, height: -2), blur: 4, color: NSColor(white: 0, alpha: 0.45).cgColor)
+                ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+                layout.drawGlyphs(forGlyphRange: glyphs, at: origin)
+                // 2 回目：本体の塗り
+                storage.removeAttribute(.strokeWidth, range: full)
+                storage.removeAttribute(.strokeColor, range: full)
+                layout.drawGlyphs(forGlyphRange: glyphs, at: origin)
+                ctx.endTransparencyLayer()
+            } else {
+                layout.drawGlyphs(forGlyphRange: glyphs, at: origin)
+            }
             NSGraphicsContext.restoreGraphicsState()
         }
+        return image.map { ($0, margin) }
     }
 }
 
@@ -70,10 +112,11 @@ final class FontPanelController: NSObject {
     private let italicButton = NSButton()
     private let underlineButton = NSButton()
     private let smoothBox = NSButton(checkboxWithTitle: "なめらか", target: nil, action: nil)
+    private let outlineBox = NSButton(checkboxWithTitle: "ふち取り＋影（Skitch 風）", target: nil, action: nil)
 
     init(style: TextStyle) {
         self.style = style
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 470, height: 44),
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 660, height: 44),
                         styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel], backing: .buffered, defer: true)
         super.init()
         panel.title = "フォント"
@@ -109,8 +152,11 @@ final class FontPanelController: NSObject {
         smoothBox.target = self
         smoothBox.action = #selector(changed(_:))
         smoothBox.toolTip = "オフにすると、アンチエイリアスなしのドット文字になります"
+        outlineBox.target = self
+        outlineBox.action = #selector(changed(_:))
+        outlineBox.toolTip = "白いふちと影を付けます。オンにすると太字・背景透明になります"
 
-        let stack = NSStackView(views: [familyPopup, sizeBox, boldButton, italicButton, underlineButton, smoothBox])
+        let stack = NSStackView(views: [familyPopup, sizeBox, boldButton, italicButton, underlineButton, smoothBox, outlineBox])
         stack.orientation = .horizontal
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
@@ -128,6 +174,13 @@ final class FontPanelController: NSObject {
         italicButton.state = style.italic ? .on : .off
         underlineButton.state = style.underline ? .on : .off
         smoothBox.state = style.smooth ? .on : .off
+        outlineBox.state = style.outline ? .on : .off
+    }
+
+    /// 外から書式を変えたとき（パネルの表示も合わせる）。
+    func setStyle(_ s: TextStyle) {
+        style = s
+        sync()
     }
 
     @objc private func changed(_ sender: Any?) {
@@ -138,6 +191,13 @@ final class FontPanelController: NSObject {
         s.italic = italicButton.state == .on
         s.underline = underlineButton.state == .on
         s.smooth = smoothBox.state == .on
+        let wasOutline = s.outline
+        s.outline = outlineBox.state == .on
+        if s.outline && !wasOutline {
+            // Skitch 風は太字が似合う
+            s.bold = true
+            boldButton.state = .on
+        }
         style = s
     }
 

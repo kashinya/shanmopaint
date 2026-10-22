@@ -24,7 +24,7 @@ final class MainView: NSView {
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = true
         scrollView.backgroundColor = Win98.workspace
-        scrollView.scrollerStyle = .legacy
+        scrollView.autohidesScrollers = true
         for v in [toolbox, scrollView, colorBox, statusBar] as [NSView] { addSubview(v) }
     }
 

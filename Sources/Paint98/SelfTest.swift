@@ -254,6 +254,107 @@ final class SelfTest {
                     self.check(false, "保存・読み込みでエラー: \(error)")
                 }
             }),
+            ("Skitch 風の矢印", {
+                self.c.setZoom(1, center: IPoint(0, 0))
+                self.engine.load(Bitmap(width: 500, height: 320, fill: Colors.white))
+                self.c.chooseTool(.arrow)
+                self.engine.primary = Colors.rgb(236, 64, 122)
+                self.drag(IPoint(60, 60), IPoint(220, 140))
+                self.check(self.engine.annotation != nil, "矢印が浮いた状態で置かれる")
+                // 先端をつまんで直す
+                self.drag(IPoint(220, 140), IPoint(230, 160))
+                if case .arrow(_, let h)? = self.engine.annotation?.shape {
+                    self.check(h == IPoint(230, 160), "先端を動かせる \(h)")
+                } else {
+                    self.check(false, "矢印のまま")
+                }
+                self.snapshot("09-arrow-floating")
+            }),
+            ("矢印を確定", {
+                // 何もない所をクリック → 確定（クリックだけなので次の矢印は置かれない）
+                self.engine.mouseDown(at: self.cp(450, 300), button: .primary)
+                self.engine.mouseUp(at: self.cp(450, 300))
+                self.check(self.engine.annotation == nil, "確定した")
+                let mid = self.engine.canvas[145, 110]
+                self.check(Colors.red(mid) > 200 && Colors.green(mid) < 120, "軸の真ん中が矢印の色 \(Colors.hexString(mid))")
+                var shadow = 0
+                for y in 100..<175 {
+                    for x in 130..<250 {
+                        let p = self.engine.canvas[x, y]
+                        if Colors.red(p) < 200 && Colors.red(p) == Colors.green(p) && Colors.green(p) == Colors.blue(p) { shadow += 1 }
+                    }
+                }
+                self.check(shadow > 20, "影がある（\(shadow) 画素）")
+            }),
+            ("Skitch 風のスタンプ", {
+                self.c.chooseTool(.stamp)
+                self.engine.options.stampKind = .cross
+                self.engine.mouseDown(at: self.cp(330, 90), button: .primary)
+                self.engine.mouseDragged(to: self.cp(360, 90))
+                self.engine.mouseUp(at: self.cp(360, 90))
+                if case .stamp(let k, let c, let r)? = self.engine.annotation?.shape {
+                    self.check(k == .cross && c == IPoint(330, 90) && r == 30, "ドラッグで大きさを決めて置ける (r=\(r))")
+                } else {
+                    self.check(false, "スタンプが置かれる")
+                }
+                self.engine.commitAnnotation() // 浮いているスタンプの種類を変えないよう先に確定
+                self.engine.options.stampKind = .check
+                self.engine.mouseDown(at: self.cp(430, 90), button: .primary)
+                self.engine.mouseUp(at: self.cp(430, 90))
+                self.engine.commitAnnotation()
+                self.engine.options.stampKind = .question
+                self.engine.mouseDown(at: self.cp(330, 200), button: .primary)
+                self.engine.mouseUp(at: self.cp(330, 200))
+                self.engine.commitAnnotation()
+                self.engine.options.stampKind = .exclamation
+                self.engine.mouseDown(at: self.cp(390, 200), button: .primary)
+                self.engine.mouseUp(at: self.cp(390, 200))
+                self.engine.commitAnnotation()
+                self.engine.options.stampKind = .star
+                self.engine.mouseDown(at: self.cp(450, 200), button: .primary)
+                self.engine.mouseUp(at: self.cp(450, 200))
+                self.engine.commitAnnotation()
+                self.engine.options.stampKind = .heart
+                self.engine.mouseDown(at: self.cp(450, 270), button: .primary)
+                self.engine.mouseUp(at: self.cp(450, 270))
+                self.c.chooseTool(.pencil)
+                let ring = self.engine.canvas[330 + 27, 90]
+                self.check(Colors.red(ring) > 180 && Colors.green(ring) < 110, "✕ の輪が赤 \(Colors.hexString(ring))")
+                let inside = self.engine.canvas[330 + 16, 90]
+                self.check(inside == Colors.white, "輪の内側は白 \(Colors.hexString(inside))")
+                let center = self.engine.canvas[330, 90]
+                self.check(Colors.red(center) > 180 && Colors.blue(center) < 110, "✕ の交点が赤 \(Colors.hexString(center))")
+            }),
+            ("Skitch 風の文字（ふち取り＋影）", {
+                var s = self.c.textStyle
+                s.outline = true
+                s.bold = true
+                s.size = 28
+                self.c.textStyle = s
+                self.engine.options.transparentBackground = true
+                self.engine.primary = Colors.rgb(236, 64, 122)
+                self.c.chooseTool(.text)
+                self.drag(IPoint(40, 220), IPoint(290, 280))
+                self.c.canvasView.textView?.insertText("文字入れ Skitch", replacementRange: NSRange(location: NSNotFound, length: 0))
+                self.snapshot("10-skitch-text-editing")
+                self.c.commitText()
+                var pink = 0
+                for y in 215..<290 {
+                    for x in 35..<300 {
+                        let p = self.engine.canvas[x, y]
+                        if Colors.red(p) > 200 && Colors.green(p) < 120 && Colors.blue(p) > 90 { pink += 1 }
+                    }
+                }
+                self.check(pink > 150, "文字の色の画素がある（\(pink) 画素）")
+                s.outline = false
+                s.bold = false
+                s.size = 16
+                self.c.textStyle = s
+                self.engine.options.transparentBackground = false
+                self.engine.primary = Colors.black
+                self.c.chooseTool(.pencil)
+                self.snapshot("11-skitch-all")
+            }),
             ("元に戻すを連打", {
                 for _ in 0..<60 { self.c.paintUndo(nil) }
                 self.check(!self.engine.canUndo, "履歴の最初まで戻れる")
