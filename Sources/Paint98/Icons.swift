@@ -293,6 +293,8 @@ enum Icons {
             "................",
             "................",
         ]
+        case .skitchText: return rows(for: .text)
+        case .skitchBox: return rows(for: .roundedRectangle)
         case .stamp: return [
             "................",
             ".....rrrrrr.....",
@@ -373,7 +375,7 @@ enum Icons {
         case .fill: return fillCursor
         case .picker: return pickerCursor
         case .magnifier: return magnifierCursor
-        case .text: return .iBeam
+        case .text, .skitchText: return .iBeam
         default: return .crosshair
         }
     }

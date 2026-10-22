@@ -806,6 +806,8 @@ final class EngineTests: XCTestCase {
         case .arrow(let t, let h):
             let r = IRect.spanning(t, h)
             return RenderedAnnotation(image: Bitmap(width: r.width, height: r.height, fill: a.color), origin: r.origin)
+        case .box(let r):
+            return RenderedAnnotation(image: Bitmap(width: r.width, height: r.height, fill: a.color), origin: r.origin)
         case .stamp(_, let c, let rad):
             return RenderedAnnotation(image: Bitmap(width: rad * 2, height: rad * 2, fill: a.color),
                                       origin: IPoint(c.x - rad, c.y - rad))
@@ -815,7 +817,7 @@ final class EngineTests: XCTestCase {
     func testArrowFloatsThenCommitsOnNextClick() {
         let e = makeEngine(100, 100)
         e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.primary = red
+        e.skitchColor = red
         e.setTool(.arrow)
         e.mouseDown(at: cp(10, 10), button: .primary)
         e.mouseDragged(to: cp(40, 30))
@@ -829,8 +831,10 @@ final class EngineTests: XCTestCase {
         e.mouseDragged(to: cp(50, 60))
         e.mouseUp(at: cp(50, 60))
         XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(10, 10), head: IPoint(50, 60)))
-        // パレットで色を変える
-        e.primary = blue
+        // Skitch の色を変える（ペイントの描画色では変わらない）
+        e.primary = Colors.black
+        XCTAssertEqual(e.annotation?.color, red)
+        e.skitchColor = blue
         XCTAssertEqual(e.annotation?.color, blue)
         // 何もない所をクリック → 確定して、クリックだけなので新しい矢印は置かない
         e.mouseDown(at: cp(90, 5), button: .primary)
@@ -978,16 +982,91 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(e.canvas[50, 50], StampKind.cross.defaultColor, "消す直前の見た目に戻る")
     }
 
-    func testSwapColorsKeepsAnnotationColor() {
+    func testPaintColorsDoNotTouchSkitchAnnotation() {
         let e = makeEngine(100, 100)
         e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
         e.setTool(.stamp)
         e.mouseDown(at: cp(50, 50), button: .primary)
         e.mouseUp(at: cp(50, 50))
         e.swapColors()
-        XCTAssertEqual(e.annotation?.color, StampKind.cross.defaultColor)
         e.primary = blue
-        XCTAssertEqual(e.annotation?.color, blue, "パレットでの色変更は効く")
+        XCTAssertEqual(e.annotation?.color, StampKind.cross.defaultColor, "ペイントの色とは別")
+        e.skitchColor = green
+        XCTAssertEqual(e.annotation?.color, green, "Skitch の色を選ぶと変わる")
+    }
+
+    func testSkitchDefaultColorIsVividRed() {
+        let e = makeEngine(100, 100)
+        XCTAssertEqual(e.skitchColor, Colors.rgb(235, 69, 110))
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.arrow)
+        e.mouseDown(at: cp(10, 10), button: .secondary)
+        e.mouseDragged(to: cp(60, 10))
+        e.mouseUp(at: cp(60, 10))
+        XCTAssertEqual(e.annotation?.color, Colors.rgb(235, 69, 110), "右ボタンでも Skitch の色")
+    }
+
+    func testSkitchBoxCreateResizeMoveAndCommit() {
+        let e = makeEngine(200, 200)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.skitchBox)
+        e.mouseDown(at: cp(20, 20), button: .primary)
+        e.mouseDragged(to: cp(80, 60))
+        e.mouseUp(at: cp(80, 60))
+        XCTAssertEqual(e.annotation?.shape, .box(IRect(x: 20, y: 20, width: 61, height: 41)))
+        XCTAssertEqual(e.annotation?.thickness, 2)
+        // 右下の角を引っ張る
+        let br = SelectionHandle.bottomRight.position(in: IRect(x: 20, y: 20, width: 61, height: 41))
+        XCTAssertEqual(e.annotationPart(at: br), .boxHandle(.bottomRight))
+        e.mouseDown(at: br, button: .primary)
+        e.mouseDragged(to: CanvasPoint(br.x + 20, br.y + 10))
+        e.mouseUp(at: CanvasPoint(br.x + 20, br.y + 10))
+        XCTAssertEqual(e.annotation?.shape, .box(IRect(x: 20, y: 20, width: 81, height: 51)))
+        // 中は空いている（つかめない）、枠線はつかめる
+        XCTAssertNil(e.annotationPart(at: cp(60, 45)))
+        XCTAssertEqual(e.annotationPart(at: cp(20, 45)), .boxHandle(.left), "辺の真ん中はつまみ")
+        XCTAssertEqual(e.annotationPart(at: cp(20, 30)), .body)
+        e.mouseDown(at: cp(20, 30), button: .primary)
+        e.mouseDragged(to: cp(30, 40))
+        e.mouseUp(at: cp(30, 40))
+        XCTAssertEqual(e.annotation?.shape, .box(IRect(x: 30, y: 30, width: 81, height: 51)))
+        // 太さの変更
+        e.options.skitchThickness = 3
+        XCTAssertEqual(e.annotation?.thickness, 3)
+        // 中をクリック → 確定して、クリックだけなので新しい四角は置かない
+        e.mouseDown(at: cp(60, 50), button: .primary)
+        e.mouseUp(at: cp(60, 50))
+        XCTAssertNil(e.annotation)
+        XCTAssertEqual(e.canvas[30, 30], Annotation.skitchRed)
+    }
+
+    func testSkitchBoxShiftMakesSquare() {
+        let e = makeEngine(200, 200)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.skitchBox)
+        e.mouseDown(at: cp(10, 10), button: .primary)
+        e.mouseDragged(to: cp(50, 30), modifiers: .shift)
+        e.mouseUp(at: cp(50, 30), modifiers: .shift)
+        XCTAssertEqual(e.annotation?.shape, .box(IRect(x: 10, y: 10, width: 41, height: 41)))
+    }
+
+    func testSkitchTextNeverFillsBackground() {
+        let e = makeEngine(100, 60)
+        e.options.transparentBackground = false
+        e.secondary = blue
+        e.setTool(.skitchText)
+        e.mouseDown(at: cp(10, 10), button: .primary)
+        e.mouseUp(at: cp(10, 10))
+        XCTAssertNotNil(e.textBox)
+        e.commitText(Bitmap(width: 50, height: 20, fill: Colors.clear), at: IPoint(10, 10))
+        XCTAssertEqual(e.canvas[20, 15], Colors.white, "Skitch の文字は背景を塗らない")
+    }
+
+    func testToolGroups() {
+        XCTAssertEqual(Tool.paintTools.count, 16)
+        XCTAssertEqual(Set(Tool.paintTools + Tool.skitchTools).count, Tool.allCases.count)
+        XCTAssertTrue(Tool.skitchText.isText && Tool.skitchText.isSkitch)
+        XCTAssertFalse(Tool.text.isSkitch)
     }
 
     func testRedoDisabledWhileAnnotationFloats() {

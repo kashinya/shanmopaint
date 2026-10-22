@@ -33,7 +33,7 @@ final class ToolboxView: NSView {
                       width: Self.buttonSize, height: Self.buttonSize)
     }
 
-    static var rows: Int { (Tool.allCases.count + 1) / 2 }
+    static var rows: Int { (Tool.paintTools.count + 1) / 2 }
 
     var optionsRect: NSRect {
         let top = gridOrigin.y + CGFloat(Self.rows) * Self.buttonSize + 6
@@ -44,7 +44,7 @@ final class ToolboxView: NSView {
         Win98.face.setFill()
         bounds.fill()
         guard let engine = engine else { return }
-        for (i, tool) in Tool.allCases.enumerated() {
+        for (i, tool) in Tool.paintTools.enumerated() {
             let r = buttonRect(i)
             if engine.tool == tool {
                 Win98.dither(r)
@@ -63,7 +63,7 @@ final class ToolboxView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let engine = engine else { return }
         let p = convert(event.locationInWindow, from: nil)
-        for (i, tool) in Tool.allCases.enumerated() where buttonRect(i).contains(p) {
+        for (i, tool) in Tool.paintTools.enumerated() where buttonRect(i).contains(p) {
             onToolChosen?(tool)
             return
         }
@@ -75,7 +75,7 @@ final class ToolboxView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        for (i, tool) in Tool.allCases.enumerated() where buttonRect(i).contains(p) {
+        for (i, tool) in Tool.paintTools.enumerated() where buttonRect(i).contains(p) {
             onHover?(ToolInfo.name(tool) + ": " + ToolInfo.hint(tool))
             return
         }
@@ -106,8 +106,10 @@ enum ToolInfo {
         case .polygon: return "多角形"
         case .ellipse: return "楕円"
         case .roundedRectangle: return "角の丸い四角形"
-        case .arrow: return "矢印（Skitch 風）"
-        case .stamp: return "スタンプ（Skitch 風）"
+        case .arrow: return "矢印（Skitch）"
+        case .skitchText: return "文字（Skitch）"
+        case .skitchBox: return "四角（Skitch）"
+        case .stamp: return "スタンプ（Skitch）"
         }
     }
 
@@ -129,7 +131,9 @@ enum ToolInfo {
         case .polygon: return "クリックで頂点を足し、ダブルクリックか始点クリックで閉じます。"
         case .ellipse: return "楕円を描きます。shift で正円。"
         case .roundedRectangle: return "角の丸い四角形を描きます。shift で正方形。"
-        case .arrow: return "ドラッグで矢印。置いたあとも先端・根元・本体をつまんで直せます。色はパレットで。外側をクリックで確定。"
+        case .arrow: return "ドラッグで矢印。置いたあとも先端・根元・本体をつまんで直せます。色と太さは Skitch ツールバーで。外側をクリックで確定。"
+        case .skitchText: return "クリックかドラッグで文字を入力（太字・白ふち・影）。大きさと色は Skitch ツールバーで。枠の外をクリックで確定。"
+        case .skitchBox: return "ドラッグで角の丸い四角（shift で正方形）。角・辺のつまみで大きさ、枠線をつかんで移動。外側をクリックで確定。"
         case .stamp: return "クリックでスタンプ（ドラッグで大きさ）。角をつまんで拡大縮小、本体で移動。外側をクリックで確定。"
         }
     }
@@ -268,32 +272,10 @@ enum OptionsLayout {
                 e.options.lineWidth = e.options.lineWidth % 5 + 1
             }))
             return out
-        case .arrow:
-            return zip(rows(3), ToolOptions.arrowThicknesses).map { rr, t in
-                Item(rect: rr, selected: o.arrowThickness == t, draw: { rect, sel in
-                    guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-                    // 小さな見本なので、太さ 1〜3 を少し控えめに見せる
-                    if let path = AnnotationRenderer.arrowPath(tail: CGPoint(x: rect.minX + 4, y: rect.midY),
-                                                               head: CGPoint(x: rect.maxX - 4, y: rect.midY), thickness: max(1, t - 1)) {
-                        ctx.addPath(path)
-                        ctx.setFillColor((sel ? Win98.highlight : Win98.text).cgColor)
-                        ctx.fillPath()
-                    }
-                }, apply: { $0.options.arrowThickness = t })
-            }
-        case .stamp:
-            let kinds = StampKind.allCases
-            let rh = r.height / 3, cw = r.width / 2
-            return kinds.enumerated().map { i, k in
-                let rr = NSRect(x: r.minX + CGFloat(i % 2) * cw, y: r.minY + CGFloat(i / 2) * rh, width: cw, height: rh)
-                return Item(rect: rr, selected: o.stampKind == k, draw: { rect, _ in
-                    guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-                    let rad = min(rect.width, rect.height) / 2 - 1.5
-                    AnnotationRenderer.drawStamp(k, in: ctx, center: CGPoint(x: rect.midX, y: rect.midY), radius: rad,
-                                                 color: Win98.color(k.defaultColor).cgColor, shadow: false)
-                }, apply: { $0.options.stampKind = k })
-            }
         case .pencil, .fill, .picker:
+            return []
+        case .arrow, .skitchText, .skitchBox, .stamp:
+            // Skitch の設定は上の Skitch ツールバーにある
             return []
         }
     }

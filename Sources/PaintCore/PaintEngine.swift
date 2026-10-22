@@ -7,8 +7,20 @@ public enum Tool: String, CaseIterable {
     case line, curve
     case rectangle, polygon
     case ellipse, roundedRectangle
-    /// Skitch 風の矢印・スタンプ
-    case arrow, stamp
+    /// Skitch 風の注釈（ペイントの道具箱とは別の Skitch ツールバーに並ぶ）
+    case arrow, skitchText, skitchBox, stamp
+
+    /// Win98 ペイントの道具箱に並ぶ 16 個。
+    public static let paintTools: [Tool] = [.freeSelect, .select, .eraser, .fill, .picker, .magnifier, .pencil, .brush,
+                                            .airbrush, .text, .line, .curve, .rectangle, .polygon, .ellipse, .roundedRectangle]
+    /// Skitch ツールバーに並ぶ 4 個。
+    public static let skitchTools: [Tool] = [.arrow, .skitchText, .skitchBox, .stamp]
+
+    public var isSkitch: Bool { Tool.skitchTools.contains(self) }
+    /// 文字を入力する道具（ペイントのテキスト / Skitch の文字）。
+    public var isText: Bool { self == .text || self == .skitchText }
+    /// 浮いた注釈を置く道具。
+    public var placesAnnotation: Bool { self == .arrow || self == .skitchBox || self == .stamp }
 }
 
 public enum MouseButton {
@@ -50,8 +62,10 @@ public struct ToolOptions: Equatable {
     public var magnification = 4
     /// 選択範囲・テキストの背景を透明にする（背景色の画素を描かない）
     public var transparentBackground = false
-    /// Skitch 風の矢印の太さ（1〜3）
-    public var arrowThickness = 2
+    /// Skitch の矢印・四角の太さ（1〜3）
+    public var skitchThickness = 2
+    /// Skitch の文字の大きさ（skitchTextSizes の番号）
+    public var skitchTextSize = 1
     public var stampKind: StampKind = .cross
 
     public init() {}
@@ -61,7 +75,9 @@ public struct ToolOptions: Equatable {
     public static let lineWidths = [1, 2, 3, 4, 5]
     public static let airbrushRadii = [4, 8, 12]
     public static let magnifications = [1, 2, 4, 6, 8]
-    public static let arrowThicknesses = [1, 2, 3]
+    public static let skitchThicknesses = [1, 2, 3]
+    /// Skitch の文字の大きさ（ピクセル）：小・中・大
+    public static let skitchTextSizes = [20, 28, 40]
 }
 
 /// ペイントの中身（キャンバス・道具・選択範囲・履歴）。UI に依存しない。
@@ -72,7 +88,13 @@ public final class PaintEngine {
         didSet {
             emit(.colors)
             if selection != nil && options.transparentBackground { emit(.display) }
-            if annotation != nil && primary != oldValue && !swappingColors { annotation!.color = primary; emit(.display) }
+        }
+    }
+    /// Skitch ツールの色（ペイントの描画色とは別）。浮いている注釈があればその色も変える。
+    public var skitchColor: Pixel = Annotation.skitchRed {
+        didSet {
+            emit(.colors)
+            if annotation != nil && skitchColor != oldValue { annotation!.color = skitchColor; emit(.display) }
         }
     }
     public var secondary: Pixel = Colors.white {
@@ -93,8 +115,8 @@ public final class PaintEngine {
             }
             if var a = annotation {
                 switch a.shape {
-                case .arrow:
-                    a.thickness = options.arrowThickness
+                case .arrow, .box:
+                    a.thickness = options.skitchThickness
                 case .stamp(_, let c, let r):
                     if oldValue.stampKind != options.stampKind {
                         a.shape = .stamp(options.stampKind, center: c, radius: r)
@@ -152,7 +174,6 @@ public final class PaintEngine {
     private var polygon: PolygonState?
     private var curve: CurveState?
     private var renderedAnnotation: RenderedAnnotation?
-    private var swappingColors = false
 
     private enum Drag {
         case stroke(button: MouseButton, last: IPoint)
@@ -167,6 +188,7 @@ public final class PaintEngine {
         case polygonSegment
         case curvePoint
         case annotation(part: Annotation.Part, start: CanvasPoint, original: Annotation, isNew: Bool)
+        case boxCreate(start: IPoint)
         case stampPlace(center: IPoint)
     }
 
@@ -244,12 +266,9 @@ public final class PaintEngine {
     }
 
     public func swapColors() {
-        // 入れ替えで浮いている注釈の色まで変えない（スタンプが白くなってしまう）
-        swappingColors = true
         let p = primary
         primary = secondary
         secondary = p
-        swappingColors = false
     }
 
     // MARK: - マウス
@@ -316,7 +335,7 @@ public final class PaintEngine {
             spray(at: p, color: fg)
             drag = .airbrush(button: button, at: p)
             changed()
-        case .text:
+        case .text, .skitchText:
             // キャンバスの外（灰色の所）には枠を作らない
             guard textBox == nil, canvas.contains(p.x, p.y) else { return }
             drag = .text(start: p)
@@ -345,7 +364,7 @@ public final class PaintEngine {
             }
             drag = .curvePoint
             updateCurveOverlay()
-        case .arrow, .stamp:
+        case .arrow, .skitchBox, .stamp:
             if let a = annotation {
                 if let part = annotationPart(at: cp) {
                     drag = .annotation(part: part, start: cp, original: a, isNew: false)
@@ -357,9 +376,12 @@ public final class PaintEngine {
                 if tool == .stamp { return }
             }
             if tool == .arrow {
-                let a = Annotation(shape: .arrow(tail: p, head: p), color: fg, thickness: options.arrowThickness)
+                let a = Annotation(shape: .arrow(tail: p, head: p), color: skitchColor, thickness: options.skitchThickness)
                 annotation = a
                 drag = .annotation(part: .head, start: cp, original: a, isNew: true)
+            } else if tool == .skitchBox {
+                annotation = Annotation(shape: .box(IRect.spanning(p, p)), color: skitchColor, thickness: options.skitchThickness)
+                drag = .boxCreate(start: p)
             } else {
                 let k = options.stampKind
                 annotation = Annotation(shape: .stamp(k, center: p, radius: Annotation.defaultStampRadius),
@@ -448,6 +470,14 @@ public final class PaintEngine {
         case .annotation(let part, let start, let original, _):
             let dx = Int((cp.x - start.x).rounded()), dy = Int((cp.y - start.y).rounded())
             annotation = original.adjusted(part, dx: dx, dy: dy, pointer: p, constrain: shift)
+            emit(.selection)
+            emit(.display)
+        case .boxCreate(let s):
+            guard var a = annotation else { return }
+            let e = shift ? Raster.constrainSquare(from: s, to: p) : p
+            a.shape = .box(IRect.spanning(s, e))
+            annotation = a
+            liveSize = IRect.spanning(s, e).size
             emit(.selection)
             emit(.display)
         case .stampPlace(let c):
@@ -540,9 +570,17 @@ public final class PaintEngine {
                 commitCurve()
             }
         case .annotation(_, _, let original, let isNew):
-            if let a = annotation, case .arrow = a.shape, a.arrowLength < Annotation.minArrowLength {
-                // 新しく引こうとしてほとんど動かさなかった矢印は置かない。置いてある矢印を縮めすぎたら元に戻す
+            if let a = annotation, a.isTooSmall {
+                // 新しく引こうとしてほとんど動かさなかった矢印は置かない。置いてある矢印・四角を縮めすぎたら元に戻す
                 annotation = isNew ? nil : original
+                emit(.display)
+            }
+            emit(.selection)
+        case .boxCreate:
+            // クリックしただけ・小さすぎる四角は置かない
+            if let a = annotation, case .box(let r) = a.shape,
+               r.width < Annotation.minBoxSide || r.height < Annotation.minBoxSide {
+                annotation = nil
                 emit(.display)
             }
             emit(.selection)
@@ -574,7 +612,7 @@ public final class PaintEngine {
 
     /// 浮いている注釈のどこに当たるか（cp はキャンバス座標）。
     public func annotationPart(at cp: CanvasPoint) -> Annotation.Part? {
-        guard let a = annotation, tool == .arrow || tool == .stamp else { return nil }
+        guard let a = annotation, tool.placesAnnotation else { return nil }
         return a.part(at: cp, tolerance: max(5.0 / zoom, 1.0))
     }
 
@@ -867,10 +905,12 @@ public final class PaintEngine {
 
     /// UI が描いたテキスト画像（乗算済みアルファ）を確定する。
     /// background は不透明モードで背景色に塗る範囲（省略時は画像の範囲）。
+    /// Skitch の文字は背景を塗らない（不透明・透明の設定に関係なく）。
     public func commitText(_ rendered: Bitmap, at origin: IPoint, background: IRect? = nil) {
+        let fill = !options.transparentBackground && tool != .skitchText
         textBox = nil
         history.push(canvas)
-        if !options.transparentBackground {
+        if fill {
             canvas.fill(background ?? IRect(origin: origin, size: rendered.size), with: secondary)
         }
         canvas.drawPremultiplied(rendered, at: origin)

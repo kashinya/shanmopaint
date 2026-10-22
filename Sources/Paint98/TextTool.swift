@@ -155,11 +155,10 @@ final class FontPanelController: NSObject {
     private let italicButton = NSButton()
     private let underlineButton = NSButton()
     private let smoothBox = NSButton(checkboxWithTitle: "なめらか", target: nil, action: nil)
-    private let outlineBox = NSButton(checkboxWithTitle: "ふち取り＋影（Skitch 風）", target: nil, action: nil)
 
     init(style: TextStyle) {
         self.style = style
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 660, height: 44),
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 44),
                         styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel], backing: .buffered, defer: true)
         super.init()
         panel.title = "フォント"
@@ -195,11 +194,8 @@ final class FontPanelController: NSObject {
         smoothBox.target = self
         smoothBox.action = #selector(changed(_:))
         smoothBox.toolTip = "オフにすると、アンチエイリアスなしのドット文字になります"
-        outlineBox.target = self
-        outlineBox.action = #selector(changed(_:))
-        outlineBox.toolTip = "白いふちと影を付けます。オンにすると太字・背景透明になります"
 
-        let stack = NSStackView(views: [familyPopup, sizeBox, boldButton, italicButton, underlineButton, smoothBox, outlineBox])
+        let stack = NSStackView(views: [familyPopup, sizeBox, boldButton, italicButton, underlineButton, smoothBox])
         stack.orientation = .horizontal
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
@@ -217,7 +213,6 @@ final class FontPanelController: NSObject {
         italicButton.state = style.italic ? .on : .off
         underlineButton.state = style.underline ? .on : .off
         smoothBox.state = style.smooth ? .on : .off
-        outlineBox.state = style.outline ? .on : .off
     }
 
     /// 外から書式を変えたとき（パネルの表示も合わせる）。
@@ -240,13 +235,6 @@ final class FontPanelController: NSObject {
         s.italic = italicButton.state == .on
         s.underline = underlineButton.state == .on
         s.smooth = smoothBox.state == .on
-        let wasOutline = s.outline
-        s.outline = outlineBox.state == .on
-        if s.outline && !wasOutline {
-            // Skitch 風は太字が似合う
-            s.bold = true
-            boldButton.state = .on
-        }
         style = s
         if (sender as AnyObject?) === sizeBox {
             // サイズを決めたら、続けて打つ文字がキャンバスの入力欄に入るよう戻す

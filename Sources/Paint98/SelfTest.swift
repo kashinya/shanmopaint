@@ -283,8 +283,8 @@ final class SelfTest {
             ("Skitch 風の矢印", {
                 self.c.setZoom(1, center: IPoint(0, 0))
                 self.engine.load(Bitmap(width: 500, height: 320, fill: Colors.white))
+                self.check(self.engine.skitchColor == Annotation.skitchRed, "Skitch の色は最初からビビッとな赤")
                 self.c.chooseTool(.arrow)
-                self.engine.primary = Colors.rgb(236, 64, 122)
                 self.drag(IPoint(60, 60), IPoint(220, 140))
                 self.check(self.engine.annotation != nil, "矢印が浮いた状態で置かれる")
                 // 先端をつまんで直す
@@ -351,18 +351,25 @@ final class SelfTest {
                 let center = self.engine.canvas[330, 90]
                 self.check(Colors.red(center) > 180 && Colors.blue(center) < 110, "✕ の交点が赤 \(Colors.hexString(center))")
             }),
-            ("Skitch 風の文字（ふち取り＋影）", {
-                var s = self.c.textStyle
-                s.outline = true
-                s.bold = true
-                s.size = 28
-                self.c.textStyle = s
-                self.engine.options.transparentBackground = true
-                self.engine.primary = Colors.rgb(236, 64, 122)
-                self.c.chooseTool(.text)
+            ("Skitch の四角", {
+                self.c.chooseTool(.skitchBox)
+                self.drag(IPoint(30, 170), IPoint(300, 310))
+                self.check(self.engine.annotation?.shape == .box(IRect(x: 30, y: 170, width: 271, height: 141)), "ドラッグで四角が浮いて置かれる")
+                self.snapshot("10-box-floating")
+                self.engine.commitAnnotation()
+                let edge = self.engine.canvas[30 + 2, 240]
+                self.check(Colors.red(edge) > 200 && Colors.green(edge) < 110, "枠線が Skitch の赤 \(Colors.hexString(edge))")
+                let inside = self.engine.canvas[160, 240]
+                self.check(inside == Colors.white, "中は塗らない \(Colors.hexString(inside))")
+            }),
+            ("Skitch の文字（太字・白ふち・影）", {
+                self.engine.options.transparentBackground = false
+                self.engine.secondary = Colors.rgb(0, 0, 255)
+                self.c.chooseTool(.skitchText)
+                self.check(!(self.c.fontPanelVisible), "Skitch の文字ではペイントのフォントパネルを出さない")
                 self.drag(IPoint(40, 220), IPoint(290, 280))
                 self.c.canvasView.textView?.insertText("文字入れ Skitch", replacementRange: NSRange(location: NSNotFound, length: 0))
-                self.snapshot("10-skitch-text-editing")
+                self.snapshot("12-skitch-text-editing")
                 self.c.commitText()
                 var pink = 0
                 for y in 215..<290 {
@@ -372,12 +379,10 @@ final class SelfTest {
                     }
                 }
                 self.check(pink > 150, "文字の色の画素がある（\(pink) 画素）")
-                s.outline = false
-                s.bold = false
-                s.size = 16
-                self.c.textStyle = s
-                self.engine.options.transparentBackground = false
-                self.engine.primary = Colors.black
+                var blue = 0
+                for y in 215..<290 { for x in 35..<300 where self.engine.canvas[x, y] == Colors.rgb(0, 0, 255) { blue += 1 } }
+                self.check(blue == 0, "不透明モードでも背景を塗らない（青 \(blue) 画素）")
+                self.engine.secondary = Colors.white
                 self.c.chooseTool(.pencil)
                 self.snapshot("11-skitch-all")
             }),

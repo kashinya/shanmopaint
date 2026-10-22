@@ -130,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("ツールボックス", #selector(MainController.toggleToolbox(_:)), "t"),
             item("カラーボックス", #selector(MainController.toggleColorBox(_:)), "l"),
             item("ステータスバー", #selector(MainController.toggleStatusBar(_:))),
+            item("Skitch ツールバー", #selector(MainController.toggleSkitchBar(_:))),
             sep,
             item("拡大", #selector(MainController.zoomIn(_:)), "+"),
             zoomEq,

@@ -2,8 +2,18 @@
 public struct Annotation: Equatable {
     public enum Shape: Equatable {
         case arrow(tail: IPoint, head: IPoint)
+        /// 角の丸い太枠の四角
+        case box(IRect)
         case stamp(StampKind, center: IPoint, radius: Int)
     }
+
+    /// Skitch の「ビビッとな赤」（矢印・四角・文字の既定色）
+    public static let skitchRed = Colors.rgb(235, 69, 110)
+    /// Skitch ツールバーの色
+    public static let skitchPalette: [Pixel] = [
+        skitchRed, Colors.rgb(245, 140, 35), Colors.rgb(248, 205, 30), Colors.rgb(60, 185, 90),
+        Colors.rgb(40, 130, 230), Colors.rgb(150, 80, 220), Colors.black, Colors.white,
+    ]
 
     public var shape: Shape
     public var color: Pixel
@@ -29,6 +39,34 @@ public struct Annotation: Equatable {
     public static let minStampRadius = 8
     /// これより短い矢印は置かない（クリックしただけ・ほとんど動かさなかったとき）。
     public static let minArrowLength = 10.0
+    /// これより小さい四角は置かない。
+    public static let minBoxSide = 8
+
+    /// 四角の枠線の太さ（ピクセル）。
+    public static func boxStrokeWidth(_ thickness: Int) -> Double {
+        switch thickness {
+        case ...1: return 3
+        case 2: return 5
+        default: return 8
+        }
+    }
+
+    /// 四角の白ふちの太さ。
+    public static func boxOutline(_ thickness: Int) -> Double { max(2, (boxStrokeWidth(thickness) * 0.45).rounded()) }
+
+    /// 角の丸みの半径。
+    public static func boxCornerRadius(_ r: IRect, thickness: Int) -> Double {
+        min(10 + boxStrokeWidth(thickness), Double(min(r.width, r.height)) / 2)
+    }
+
+    /// 置かない・元に戻すほど小さいか。
+    public var isTooSmall: Bool {
+        switch shape {
+        case .arrow: return arrowLength < Self.minArrowLength
+        case .box(let r): return r.width < Self.minBoxSide || r.height < Self.minBoxSide
+        case .stamp: return false
+        }
+    }
 
     /// 矢印の形の寸法。描画と当たり判定で同じものを使う。
     public struct ArrowGeometry {
@@ -52,6 +90,8 @@ public struct Annotation: Equatable {
     /// どこをつまんだか。
     public enum Part: Equatable {
         case tail, head, resize, body
+        /// 四角の角・辺のつまみ
+        case boxHandle(SelectionHandle)
     }
 
     /// つまむ点（キャンバス座標）。
@@ -59,6 +99,8 @@ public struct Annotation: Equatable {
         switch shape {
         case .arrow(let t, let h):
             return [CanvasPoint(t), CanvasPoint(h)]
+        case .box(let r):
+            return SelectionHandle.allCases.map { $0.position(in: r) }
         case .stamp(_, let c, let r):
             let cx = Double(c.x) + 0.5, cy = Double(c.y) + 0.5, rr = Double(r)
             return [CanvasPoint(cx - rr, cy - rr), CanvasPoint(cx + rr, cy - rr),
@@ -94,6 +136,19 @@ public struct Annotation: Equatable {
             }
             if dist(p, q) <= half + g.outline + tolerance { return .body }
             return nil
+        case .box(let r):
+            let ht = min(tolerance, max(2, Double(min(r.width, r.height)) * 0.3))
+            for h in SelectionHandle.allCases {
+                let hp = h.position(in: r)
+                if abs(p.x - hp.x) <= ht + 1 && abs(p.y - hp.y) <= ht + 1 { return .boxHandle(h) }
+            }
+            // 枠線のあたりだけつかめる（中は空けておき、内側に別の矢印などを置けるように）
+            let band = Self.boxStrokeWidth(thickness) / 2 + Self.boxOutline(thickness) + tolerance
+            let l = Double(r.minX), t = Double(r.minY), rr = Double(r.maxX), b = Double(r.maxY)
+            let inOuter = p.x >= l - band && p.x <= rr + band && p.y >= t - band && p.y <= b + band
+            let inInner = p.x > l + band && p.x < rr - band && p.y > t + band && p.y < b - band
+            if inOuter && !inInner { return .body }
+            return nil
         case .stamp(_, let c, let r):
             // 縮小表示でも本体をつかめるよう、角の当たり判定はスタンプの大きさに対して控えめにする
             let ht = min(tolerance, max(2, Double(r) * 0.35))
@@ -115,8 +170,15 @@ public struct Annotation: Equatable {
             case .tail:
                 let nt = IPoint(t.x + dx, t.y + dy)
                 a.shape = .arrow(tail: constrain ? Raster.constrainLine(from: h, to: nt) : nt, head: h)
-            case .body, .resize:
+            case .body, .resize, .boxHandle:
                 a.shape = .arrow(tail: IPoint(t.x + dx, t.y + dy), head: IPoint(h.x + dx, h.y + dy))
+            }
+        case .box(let r):
+            switch part {
+            case .boxHandle(let h):
+                a.shape = .box(h.resize(r, dx: dx, dy: dy))
+            default:
+                a.shape = .box(r.offsetBy(dx: dx, dy: dy))
             }
         case .stamp(let k, let c, let r):
             switch part {
@@ -148,7 +210,7 @@ public enum StampKind: String, CaseIterable {
     /// スタンプごとの色（パレットをクリックすれば変えられる）。
     public var defaultColor: Pixel {
         switch self {
-        case .cross: return Colors.rgb(226, 62, 51)
+        case .cross: return Colors.rgb(224, 73, 53)
         case .check: return Colors.rgb(40, 165, 70)
         case .question: return Colors.rgb(35, 120, 215)
         case .exclamation: return Colors.rgb(240, 145, 20)

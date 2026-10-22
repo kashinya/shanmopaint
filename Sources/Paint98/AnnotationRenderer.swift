@@ -12,6 +12,8 @@ enum AnnotationRenderer {
         switch a.shape {
         case .arrow(let t, let h):
             return renderArrow(tail: t, head: h, color: a.color, thickness: a.thickness, clip: clip)
+        case .box(let r):
+            return renderBox(r, color: a.color, thickness: a.thickness, clip: clip)
         case .stamp(let kind, let c, let r):
             return renderStamp(kind, center: c, radius: r, color: a.color, clip: clip)
         }
@@ -66,6 +68,32 @@ enum AnnotationRenderer {
             ctx.addPath(path)
             ctx.setFillColor(Win98.color(color).cgColor)
             ctx.fillPath()
+            ctx.endTransparencyLayer()
+        }
+    }
+
+    // MARK: - 四角
+
+    /// 角の丸い太枠の四角。枠線は rect の内側に収める（つまみの位置と見た目をそろえる）。
+    static func renderBox(_ rect: IRect, color: Pixel, thickness: Int, clip: IRect) -> RenderedAnnotation? {
+        let w = CGFloat(Annotation.boxStrokeWidth(thickness))
+        let outline = CGFloat(Annotation.boxOutline(thickness))
+        let r = CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height).insetBy(dx: w / 2, dy: w / 2)
+        guard r.width > 0, r.height > 0 else { return nil }
+        let radius = max(0, CGFloat(Annotation.boxCornerRadius(rect, thickness: thickness)) - w / 2)
+        let path = CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        return draw(bounds: r, margin: w / 2 + outline + shadowBlur + 4, clip: clip) { ctx in
+            ctx.setShadow(offset: shadowOffset, blur: shadowBlur, color: shadowColor)
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+            ctx.setLineJoin(.round)
+            ctx.addPath(path)
+            ctx.setLineWidth(w + outline * 2)
+            ctx.setStrokeColor(NSColor.white.cgColor)
+            ctx.strokePath()
+            ctx.addPath(path)
+            ctx.setLineWidth(w)
+            ctx.setStrokeColor(Win98.color(color).cgColor)
+            ctx.strokePath()
             ctx.endTransparencyLayer()
         }
     }

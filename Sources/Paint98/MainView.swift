@@ -3,6 +3,7 @@ import PaintCore
 
 /// ウインドウの中身：道具箱・作業領域・カラーボックス・ステータスバーを並べる。
 final class MainView: NSView {
+    let skitchBar = SkitchBarView()
     let toolbox = ToolboxView()
     let scrollView = NSScrollView()
     let canvasView: CanvasView
@@ -12,12 +13,14 @@ final class MainView: NSView {
     var showToolbox = true { didSet { needsLayout = true; needsDisplay = true } }
     var showColorBox = true { didSet { needsLayout = true; needsDisplay = true } }
     var showStatusBar = true { didSet { needsLayout = true; needsDisplay = true } }
+    var showSkitchBar = true { didSet { needsLayout = true; needsDisplay = true } }
 
     init(engine: PaintEngine) {
         canvasView = CanvasView(engine: engine)
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         toolbox.engine = engine
         colorBox.engine = engine
+        skitchBar.engine = engine
         scrollView.documentView = canvasView
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
@@ -25,7 +28,7 @@ final class MainView: NSView {
         scrollView.drawsBackground = true
         scrollView.backgroundColor = Win98.workspace
         scrollView.autohidesScrollers = true
-        for v in [toolbox, scrollView, colorBox, statusBar] as [NSView] { addSubview(v) }
+        for v in [skitchBar, toolbox, scrollView, colorBox, statusBar] as [NSView] { addSubview(v) }
         // スクロールバーが出たり消えたりして見える範囲が変わったら、キャンバスの外枠を合わせ直す
         scrollView.contentView.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scrollView.contentView,
@@ -41,6 +44,12 @@ final class MainView: NSView {
     override func layout() {
         super.layout()
         let b = bounds
+        var top: CGFloat = 0
+        skitchBar.isHidden = !showSkitchBar
+        if showSkitchBar {
+            skitchBar.frame = NSRect(x: 0, y: 0, width: b.width, height: SkitchBarView.height)
+            top = SkitchBarView.height
+        }
         var bottom = b.maxY
         statusBar.isHidden = !showStatusBar
         if showStatusBar {
@@ -54,8 +63,8 @@ final class MainView: NSView {
         }
         toolbox.isHidden = !showToolbox
         let left: CGFloat = showToolbox ? ToolboxView.width : 0
-        toolbox.frame = NSRect(x: 0, y: 0, width: left, height: bottom)
-        scrollView.frame = NSRect(x: left + 2, y: 2, width: max(10, b.width - left - 4), height: max(10, bottom - 4))
+        toolbox.frame = NSRect(x: 0, y: top, width: left, height: bottom - top)
+        scrollView.frame = NSRect(x: left + 2, y: top + 2, width: max(10, b.width - left - 4), height: max(10, bottom - top - 4))
         canvasView.updateFrameSize()
     }
 

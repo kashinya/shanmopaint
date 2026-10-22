@@ -121,7 +121,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
             }
         }
         if let tb = engine.textBox { dotted(viewRect(tb).insetBy(dx: -1, dy: -1)) }
-        if let a = engine.annotation, engine.tool == .arrow || engine.tool == .stamp {
+        if let a = engine.annotation, engine.tool.placesAnnotation {
             if case .stamp(_, let c, let r) = a.shape {
                 dotted(viewRect(IRect(x: c.x - r, y: c.y - r, width: 2 * r + 1, height: 2 * r + 1)))
             }
@@ -338,6 +338,8 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
         if let part = engine.annotationPart(at: cp) {
             switch part {
             case .body: return dragging ? .closedHand : .openHand
+            case .boxHandle(.left), .boxHandle(.right): return .resizeLeftRight
+            case .boxHandle(.top), .boxHandle(.bottom): return .resizeUpDown
             default: return .crosshair
             }
         }
@@ -460,17 +462,19 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
     /// フォント・色・背景を入力欄に反映（表示倍率に合わせて拡大）。
     func applyTextStyle() {
         guard let tv = textView, let controller = controller else { return }
-        let style = controller.textStyle
-        let attrs = style.previewAttributes(scale: zoom, color: Win98.color(engine.primary))
+        let style = controller.activeTextStyle
+        let color = controller.activeTextColor
+        let attrs = style.previewAttributes(scale: zoom, color: color)
         tv.font = attrs[.font] as? NSFont
-        tv.textColor = Win98.color(engine.primary)
-        tv.insertionPointColor = Win98.color(engine.primary)
+        tv.textColor = color
+        tv.insertionPointColor = color
         tv.typingAttributes = attrs
         // 変換中（未確定の文字がある間）に書式を全体へかけると変換の下線が消えるので、確定してからかける
         if !tv.hasMarkedText(), let storage = tv.textStorage, storage.length > 0 {
             storage.setAttributes(attrs, range: NSRange(location: 0, length: storage.length))
         }
-        tv.drawsBackground = !engine.options.transparentBackground
+        // Skitch の文字は背景なし。ペイントの文字は「不透明」なら背景色で塗る
+        tv.drawsBackground = engine.tool == .text && !engine.options.transparentBackground
         tv.backgroundColor = Win98.color(engine.secondary)
         fitTextBox()
     }
@@ -491,7 +495,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
         guard let tv = textView, let controller = controller else { return }
         // 取り消しで戻った文字が古い書式のままにならないよう、確定済みの文字は今の書式にそろえる
         if !tv.hasMarkedText(), let storage = tv.textStorage, storage.length > 0 {
-            let attrs = controller.textStyle.previewAttributes(scale: zoom, color: Win98.color(engine.primary))
+            let attrs = controller.activeTextStyle.previewAttributes(scale: zoom, color: controller.activeTextColor)
             storage.setAttributes(attrs, range: NSRange(location: 0, length: storage.length))
         }
         fitTextBox()

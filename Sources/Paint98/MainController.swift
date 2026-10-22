@@ -26,11 +26,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     }
     private lazy var fontPanel: FontPanelController = {
         let c = FontPanelController(style: textStyle)
-        c.onChange = { [weak self] s in
-            guard let self = self else { return }
-            if s.outline && !self.textStyle.outline { self.engine.options.transparentBackground = true }
-            self.textStyle = s
-        }
+        c.onChange = { [weak self] s in self?.textStyle = s }
         return c
     }()
 
@@ -42,7 +38,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         super.init()
         window.contentView = mainView
         window.delegate = self
-        window.minSize = NSSize(width: 520, height: 440)
+        window.minSize = NSSize(width: 600, height: 480)
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .aqua)
         window.center()
@@ -55,6 +51,17 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         mainView.toolbox.onOptionsChanged = { [weak self] in self?.optionsChanged() }
         mainView.colorBox.onEditColor = { [weak self] i in self?.editColor(index: i) }
         mainView.colorBox.onPick = { [weak self] in self?.editingPaletteIndex = nil }
+        mainView.skitchBar.onToolChosen = { [weak self] t in self?.chooseTool(t) }
+        mainView.skitchBar.onHover = { [weak self] s in self?.statusBar.hint = s }
+        mainView.skitchBar.onChanged = { [weak self] in
+            guard let self = self else { return }
+            self.updateDefaultTextBoxSize()
+            self.canvasView.applyTextStyle()
+            self.canvasView.needsDisplay = true
+        }
+        if let saved = UserDefaults.standard.string(forKey: "skitchColor"), let p = Colors.parseHex(saved) {
+            engine.skitchColor = p
+        }
         mainView.colorBox.onHover = { [weak self] s in self?.statusBar.hint = s }
         engine.listener = { [weak self] e in self?.handle(e) }
         engine.annotationRenderer = { a, clip in AnnotationRenderer.render(a, clip: clip) }
@@ -84,12 +91,17 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             canvasView.updateStatus(nil)
         case .tool:
             mainView.toolbox.needsDisplay = true
+            mainView.skitchBar.needsDisplay = true
+            // フォントパネルはペイントのテキストツール用（Skitch の文字は太字・白ふちで固定）
             if engine.tool == .text { fontPanel.show(near: window) } else { fontPanel.hide() }
+            updateDefaultTextBoxSize()
             canvasView.applyTextStyle()
             canvasView.needsDisplay = true
             window.invalidateCursorRects(for: canvasView)
         case .colors:
             mainView.colorBox.needsDisplay = true
+            mainView.skitchBar.needsDisplay = true
+            UserDefaults.standard.set(Colors.hexString(engine.skitchColor), forKey: "skitchColor")
             canvasView.applyTextStyle()
         case .textBox:
             canvasView.syncTextView()
@@ -118,8 +130,28 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         statusBar.hint = ToolInfo.name(t) + ": " + ToolInfo.hint(t)
     }
 
-    /// 入力中の ⌘B / ⌘I / ⌘U。
+    /// Skitch の文字の書式（太字・白ふち・影。大きさは Skitch ツールバーで選ぶ）。
+    var skitchTextStyle: TextStyle {
+        var s = TextStyle()
+        s.bold = true
+        s.outline = true
+        s.size = CGFloat(ToolOptions.skitchTextSizes[min(ToolOptions.skitchTextSizes.count - 1, max(0, engine.options.skitchTextSize))])
+        return s
+    }
+
+    /// 今の道具で使う文字の書式と色。
+    var activeTextStyle: TextStyle { engine.tool == .skitchText ? skitchTextStyle : textStyle }
+    var activeTextColor: NSColor { Win98.color(engine.tool == .skitchText ? engine.skitchColor : engine.primary) }
+
+    /// クリックだけで作る入力枠の大きさを、文字の大きさに合わせる。
+    func updateDefaultTextBoxSize() {
+        let s = activeTextStyle.size
+        engine.defaultTextBoxSize = ISize(Int(max(200, s * 9)), Int((s * 1.45).rounded(.up)))
+    }
+
+    /// 入力中の ⌘B / ⌘I / ⌘U（ペイントのテキストツールだけ）。
     func toggleTextStyle(_ key: String) {
+        guard engine.tool == .text else { return }
         var s = textStyle
         switch key {
         case "b": s.bold.toggle()
@@ -147,7 +179,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             engine.cancelText()
             return
         }
-        if let r = textStyle.render(s, width: box.width, minHeight: box.height, color: Win98.color(engine.primary)) {
+        if let r = activeTextStyle.render(s, width: box.width, minHeight: box.height, color: activeTextColor) {
             // ふち取り・影の分だけ外側に余白がある。不透明の背景は枠の中だけ塗る
             engine.commitText(r.image, at: IPoint(box.x - r.margin, box.y - r.margin),
                               background: IRect(x: box.x, y: box.y, width: box.width, height: r.image.height - 2 * r.margin))
@@ -191,6 +223,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     @objc func toggleToolbox(_ sender: Any?) { mainView.showToolbox.toggle() }
     @objc func toggleColorBox(_ sender: Any?) { mainView.showColorBox.toggle() }
     @objc func toggleStatusBar(_ sender: Any?) { mainView.showStatusBar.toggle() }
+    @objc func toggleSkitchBar(_ sender: Any?) { mainView.showSkitchBar.toggle() }
 
     // MARK: - 編集
 
@@ -565,6 +598,10 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         ■ 文字（テキストツール）
         ドラッグで枠を作るかクリックして入力します。日本語入力もできます。フォントは「フォント」パネルで変えられます。枠の外をクリックすると確定します。
 
+        ■ Skitch ツールバー（上の段）
+        矢印・文字・四角・スタンプ。色は Skitch 専用（ペイントのパレットとは別）。
+        置いた直後はつまみで直せます。外側をクリックで確定、delete で削除。
+
         ■ そのほか
         左クリック: 描画色 ／ 右クリック（control+クリック）: 背景色
         option+ドラッグ: 選択範囲の複製
@@ -586,6 +623,8 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     }
 
     @objc func showFontPanel(_ sender: Any?) { fontPanel.show(near: window) }
+
+    var fontPanelVisible: Bool { fontPanel.panel.isVisible }
 
     func windowDidResignKey(_ notification: Notification) {}
 
@@ -626,6 +665,8 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             item.state = mainView.showColorBox ? .on : .off
         case #selector(toggleStatusBar(_:)):
             item.state = mainView.showStatusBar ? .on : .off
+        case #selector(toggleSkitchBar(_:)):
+            item.state = mainView.showSkitchBar ? .on : .off
         case #selector(toggleOpaque(_:)):
             item.state = engine.options.transparentBackground ? .off : .on
         case #selector(zoomIn(_:)):
