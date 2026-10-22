@@ -526,8 +526,8 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let c = controller else { return false }
-        if menuItem.action == Selector(("undo:")) { return engine.canUndo }
-        if menuItem.action == Selector(("redo:")) { return engine.canRedo }
+        if menuItem.action == #selector(undo(_:)) { return engine.canUndo }
+        if menuItem.action == #selector(redo(_:)) { return engine.canRedo }
         if menuItem.action == #selector(paste(_:)) { return Clipboard.hasImage }
         return c.validateMenuItem(menuItem)
     }

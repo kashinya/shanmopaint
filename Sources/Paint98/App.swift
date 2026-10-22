@@ -108,8 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         main.addItem(menu("編集", [
             // 標準の undo: / redo: / paste: にしておくと、フォントパネルやダイアログの入力欄でも ⌘Z / ⌘V が効く。
             // キャンバス（CanvasView）と文字の入力欄（PaintTextView）がそれぞれ受け取る
-            item("元に戻す", Selector(("undo:")), "z"),
-            item("やり直し", Selector(("redo:")), "z", [.command, .shift]),
+            item("元に戻す", #selector(CanvasView.undo(_:)), "z"),
+            item("やり直し", #selector(CanvasView.redo(_:)), "z", [.command, .shift]),
             sep,
             item("切り取り", #selector(MainController.cut(_:)), "x"),
             item("コピー", #selector(MainController.copy(_:)), "c"),
