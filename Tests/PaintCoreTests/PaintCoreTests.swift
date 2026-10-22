@@ -1221,5 +1221,103 @@ final class SkitchTests: XCTestCase {
         XCTAssertEqual(e.annotations[0].shape, .box(IRect(x: 20, y: 20, width: 131, height: 101)), "四角は動かない")
         XCTAssertNil(e.selectedAnnotation)
     }
+
+    // MARK: 3 回目のレビュー指摘
+
+    func testCutTakesPaintOnlyAndCopyIsWysiwyg() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(50, 50))
+        e.deselectAnnotation()
+        e.setTool(.select)
+        drag(e, IPoint(20, 20), IPoint(80, 80))
+        XCTAssertEqual(e.copyImage()[30, 30], StampKind.cross.defaultColor, "コピーは見えているとおり")
+        let cut = e.cut()
+        XCTAssertEqual(cut?[30, 30], Colors.white, "切り取りはペイントの絵だけ（部品は残るので入れない）")
+        XCTAssertEqual(e.annotations.count, 1)
+    }
+
+    func testHeldArrowKeyNudgesCoalesceIntoOneUndo() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(50, 50))
+        for _ in 0..<100 { e.nudgeAnnotation(dx: 1, dy: 0) }
+        XCTAssertEqual(e.annotations[0].shape, .stamp(.cross, center: IPoint(150, 50), radius: Annotation.defaultStampRadius))
+        e.undo()
+        XCTAssertEqual(e.annotations[0].shape, .stamp(.cross, center: IPoint(50, 50), radius: Annotation.defaultStampRadius),
+                       "押し続けた分は 1 回で戻る")
+        e.undo()
+        XCTAssertTrue(e.annotations.isEmpty)
+    }
+
+    func testUndoDuringDragCancelsCleanly() {
+        let e = makeEngine()
+        e.setTool(.arrow)
+        drag(e, IPoint(10, 10), IPoint(80, 10))
+        e.mouseDown(at: cp(10, 100), button: .primary)
+        e.mouseDragged(to: cp(80, 100))
+        e.undo()   // ドラッグ中に ⌘Z
+        e.mouseDragged(to: cp(90, 120))
+        e.mouseUp(at: cp(90, 120))
+        XCTAssertTrue(e.annotations.isEmpty, "引きかけの矢印は取り消され、1 本目も元に戻る")
+        e.redo()
+        XCTAssertEqual(e.annotations.count, 1)
+    }
+
+    func testToolSwitchDuringDragRecordsThePart() {
+        let e = makeEngine()
+        e.load(Bitmap(width: 200, height: 200))
+        e.setTool(.arrow)
+        e.mouseDown(at: cp(10, 100), button: .primary)
+        e.mouseDragged(to: cp(80, 100))
+        e.setTool(.pencil)
+        XCTAssertEqual(e.annotations.count, 1)
+        XCTAssertTrue(e.isModified)
+        XCTAssertTrue(e.canUndo)
+    }
+
+    func testPickerPicksVisiblePartColor() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(50, 50))
+        e.setTool(.picker)
+        click(e, IPoint(50, 50))
+        XCTAssertEqual(e.primary, StampKind.cross.defaultColor)
+    }
+
+    func testShortTextGrabAreaIsTextWidth() {
+        let e = makeEngine()
+        e.setTool(.skitchText)
+        click(e, IPoint(20, 20))
+        e.commitSkitchText("OK", measured: ISize(30, 30))
+        guard case .text(_, let f, _) = e.annotations[0].shape else { return XCTFail() }
+        XCTAssertEqual(f.width, 32)
+        e.setTool(.arrow)
+        XCTAssertNil(e.annotationPart(at: cp(120, 30)), "文字の右の空いた所はつかまない")
+        // 打ち直すときは広めの枠で打てる
+        click(e, IPoint(25, 25))
+        e.mouseDown(at: cp(25, 25), button: .primary, clickCount: 2)
+        e.mouseUp(at: cp(25, 25))
+        XCTAssertEqual(e.textBox?.width, min(e.defaultTextBoxSize.width, 200 - 20), "キャンバスに収まる範囲で広めに")
+        XCTAssertNil(e.annotationPart(at: cp(25, 25)), "入力中は部品をつかまない")
+    }
+
+    func testCropDropsPartsOutside() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(30, 30))
+        e.deselectAnnotation()
+        click(e, IPoint(170, 170))
+        e.deselectAnnotation()
+        e.setTool(.select)
+        drag(e, IPoint(0, 0), IPoint(79, 79))
+        e.cropToSelection()
+        XCTAssertEqual(e.annotations.count, 1, "外に出た部品は消える")
+        e.resizeCanvas(to: ISize(200, 200))
+        XCTAssertEqual(e.annotations.count, 1, "広げても復活しない")
+        e.undo()
+        e.undo()
+        XCTAssertEqual(e.annotations.count, 2, "元に戻すと戻る")
+    }
 }
 

@@ -204,6 +204,8 @@ public final class PaintEngine {
     private var renderCacheCanvasSize = ISize(0, 0)
     /// 選んだ部品の色・太さを Skitch ツールバーに映している最中（部品へ書き戻さない）
     private var syncingFromSelection = false
+    /// 矢印キーで動かし続けている部品（元に戻すをまとめるため）
+    private var nudgingAnnotation: Int?
 
     private enum Drag {
         case stroke(button: MouseButton, last: IPoint)
@@ -352,7 +354,9 @@ public final class PaintEngine {
                 changed()
             }
         case .picker:
-            guard let c = canvas.pixel(p.x, p.y) else { return }
+            // 見えている色を拾う（Skitch の部品の上なら部品の色）
+            let src = annotations.isEmpty ? canvas : flattened()
+            guard let c = src.pixel(p.x, p.y) else { return }
             if button == .primary { primary = c } else { secondary = c }
             setTool(previousTool)
         case .magnifier:
@@ -680,7 +684,9 @@ public final class PaintEngine {
 
     /// 部品のどこに当たるか（Skitch の道具のとき。cp はキャンバス座標）。選んでいる部品を優先する。
     public func annotationPart(at cp: CanvasPoint) -> Annotation.Part? {
-        hitAnnotation(at: cp)?.part
+        // 文字の入力中は入力欄が受け持つ（カーソルを手の形にしない）
+        guard textBox == nil else { return nil }
+        return hitAnnotation(at: cp)?.part
     }
 
     /// 今の道具でつかめる部品か。文字ツールは文字の部品だけ
@@ -697,7 +703,9 @@ public final class PaintEngine {
            let p = annotations[i].part(at: cp, tolerance: tol) {
             return (i, p)
         }
-        for i in annotations.indices.reversed() where i != editingAnnotation && canGrab(annotations[i]) {
+        let cb = canvas.bounds
+        for i in annotations.indices.reversed()
+        where i != editingAnnotation && canGrab(annotations[i]) && !annotations[i].bounds.intersection(cb).isEmpty {
             if let p = annotations[i].part(at: cp, tolerance: tol) { return (i, p) }
         }
         return nil
@@ -706,6 +714,7 @@ public final class PaintEngine {
     /// 部品を選ぶ（nil で選択を外す）。選んだ部品の色・太さなどを Skitch ツールバーに映す。
     private func selectAnnotation(_ i: Int?) {
         guard selectedAnnotation != i else { return }
+        nudgingAnnotation = nil
         selectedAnnotation = i
         if let i = i, annotations.indices.contains(i) {
             let a = annotations[i]
@@ -751,6 +760,7 @@ public final class PaintEngine {
 
     /// 選んでいる部品を消す（delete キー）。
     public func deleteAnnotation() {
+        endAnnotationDrag(commit: true)
         guard let i = selectedAnnotation, annotations.indices.contains(i) else { return }
         let before = annotations
         annotations.remove(at: i)
@@ -758,8 +768,57 @@ public final class PaintEngine {
         recordAnnotations(before)
     }
 
+    /// 矢印キーで選んでいる部品を動かす。続けて押した分は 1 回の元に戻すにまとめる。
     public func nudgeAnnotation(dx: Int, dy: Int) {
-        editSelected { $0 = $0.moved(dx: dx, dy: dy) }
+        endAnnotationDrag(commit: true)
+        guard let i = selectedAnnotation, annotations.indices.contains(i) else { return }
+        if nudgingAnnotation == i && history.canUndo {
+            annotations[i] = annotations[i].moved(dx: dx, dy: dy)
+            changed()
+            emit(.selection)
+        } else {
+            editSelected { $0 = $0.moved(dx: dx, dy: dy) }
+            nudgingAnnotation = i
+        }
+    }
+
+    /// 部品のドラッグを途中で終える（ほかの操作が割り込んだとき）。commit なら離したのと同じ扱い、そうでなければ取り消す。
+    private func endAnnotationDrag(commit: Bool) {
+        guard let d = drag else { return }
+        let before: [Annotation]
+        switch d {
+        case .annotation(let i, _, _, let original, let isNew, let b):
+            before = b
+            if commit, annotations.indices.contains(i), annotations[i].isTooSmall {
+                if isNew { annotations.remove(at: i); selectedAnnotation = nil } else { annotations[i] = original }
+            }
+        case .boxCreate(let i, _, let b):
+            before = b
+            if commit, annotations.indices.contains(i), annotations[i].isTooSmall {
+                annotations.remove(at: i)
+                selectedAnnotation = nil
+            }
+        case .stampPlace(_, _, let b):
+            before = b
+        default:
+            return
+        }
+        drag = nil
+        liveSize = nil
+        if commit {
+            recordAnnotations(before)
+        } else {
+            annotations = before
+            selectedAnnotation = nil
+        }
+        emit(.display)
+        emit(.selection)
+    }
+
+    /// キャンバスの外に出てしまった部品を消す（トリミング・縮小のあと。元に戻すで戻る）。
+    private func dropPartsOutsideCanvas() {
+        let b = canvas.bounds
+        annotations = annotations.filter { !$0.bounds.intersection(b).isEmpty }
     }
 
     /// 部品を全部ペイントの絵に焼き込む（このあとは選び直せない）。
@@ -803,7 +862,9 @@ public final class PaintEngine {
         selectAnnotation(i)
         editingAnnotation = i
         textEditInitial = str
-        textBox = frame
+        // 打ち直しのときは、少なくともクリックで作る枠の幅だけ打てるようにする
+        textBox = fitInsideCanvas(IRect(x: frame.x, y: frame.y, width: max(frame.width, defaultTextBoxSize.width),
+                                        height: max(frame.height, defaultTextBoxSize.height)))
         emit(.textBox)
         emit(.display)
         emit(.selection)
@@ -816,7 +877,10 @@ public final class PaintEngine {
         let before = annotations
         textBox = nil
         let size = ToolOptions.skitchTextPixels(options.skitchTextSize)
-        let frame = IRect(x: box.x, y: box.y, width: box.width, height: max(1, measured.height))
+        // 幅は実際に描いた文字の幅にする（短い文字で、入力枠の広い範囲がつかめてしまわないように）。
+        // 1 行ずつの折り返し位置は変わらない（どの行も描いた幅に収まっている）
+        let width = measured.width > 0 ? min(box.width, measured.width + 2) : box.width
+        let frame = IRect(x: box.x, y: box.y, width: max(1, width), height: max(1, measured.height))
         if let i = editingAnnotation, annotations.indices.contains(i) {
             if text.isEmpty {
                 annotations.remove(at: i)
@@ -868,7 +932,8 @@ public final class PaintEngine {
     /// 切り取り。選択範囲がなければ何もしない。
     public func cut() -> Bitmap? {
         guard let sel = selection else { return nil }
-        let img = clipboardImage(sel)
+        // 切り取るのはペイントの絵だけ（Skitch の部品は残るので、クリップボードにも入れない）
+        let img = paintImage(sel)
         deleteSelection()
         return img
     }
@@ -914,6 +979,7 @@ public final class PaintEngine {
         // Skitch の部品は選び直せるまま、切り抜いた位置に合わせてずらす
         annotations = annotations.map { $0.moved(dx: -sel.frame.x, dy: -sel.frame.y) }
         selectedAnnotation = nil
+        dropPartsOutsideCanvas()
         changed()
         emit(.canvasSize)
     }
@@ -1038,6 +1104,7 @@ public final class PaintEngine {
         guard s != canvas.size else { return }
         pushHistory()
         canvas = canvas.resizingCanvas(to: s, fill: secondary)
+        dropPartsOutsideCanvas()
         changed()
         emit(.canvasSize)
     }
@@ -1136,6 +1203,7 @@ public final class PaintEngine {
     // MARK: - 元に戻す
 
     public func undo() {
+        endAnnotationDrag(commit: false)
         polygon = nil
         curve = nil
         overlay = nil
@@ -1163,6 +1231,8 @@ public final class PaintEngine {
     }
 
     public func redo() {
+        endAnnotationDrag(commit: false)
+        drag = nil
         commitSelection()
         polygon = nil
         curve = nil
@@ -1177,6 +1247,7 @@ public final class PaintEngine {
         annotations = s.annotations
         selectedAnnotation = nil
         editingAnnotation = nil
+        nudgingAnnotation = nil
         emit(.selection)
         isModified = true
         isPristine = false
@@ -1195,6 +1266,7 @@ public final class PaintEngine {
 
     /// 今の状態（絵と部品）を元に戻す履歴に積む。
     private func pushHistory(_ c: Bitmap? = nil, annotations a: [Annotation]? = nil) {
+        nudgingAnnotation = nil
         history.push(DocState(canvas: c ?? canvas, annotations: a ?? annotations))
     }
 
@@ -1226,6 +1298,7 @@ public final class PaintEngine {
 
     /// 道具を替える・貼り付ける等の前に、描きかけのものを確定する。
     private func finalizePending() {
+        endAnnotationDrag(commit: true)
         drag = nil
         marquee = nil
         liveSize = nil

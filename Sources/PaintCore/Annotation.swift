@@ -122,6 +122,18 @@ public struct Annotation: Hashable {
         }
     }
 
+    /// 部品が占めるおおよその範囲（キャンバスの外に出たかの判定用）。
+    public var bounds: IRect {
+        switch shape {
+        case .arrow(let t, let h):
+            let g = Self.arrowGeometry(length: arrowLength, thickness: thickness)
+            let m = Int((g.headHalfWidth + g.outline).rounded(.up))
+            return IRect.spanning(t, h).insetBy(-m)
+        default:
+            return selectionFrame ?? IRect(x: 0, y: 0, width: 0, height: 0)
+        }
+    }
+
     /// 選んだときに点線で囲む範囲（矢印は囲まない）。
     public var selectionFrame: IRect? {
         switch shape {

@@ -226,10 +226,11 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         if textView != nil {
-            // 入力枠の外をクリック：文字を確定（このクリックでは新しい枠を作らない）
+            // 入力枠の外をクリック：文字を確定（このクリックでは新しい枠・部品を作らない）
+            let skitchEdit = engine.textBoxIsSkitch
             controller?.commitText()
             window?.makeFirstResponder(self)
-            if engine.tool.isText { return }
+            if engine.tool.isText || skitchEdit { return }
         }
         window?.makeFirstResponder(self)
         if let h = canvasHandle(at: p) {
@@ -241,9 +242,10 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
 
     override func rightMouseDown(with event: NSEvent) {
         if textView != nil {
+            let skitchEdit = engine.textBoxIsSkitch
             controller?.commitText()
             window?.makeFirstResponder(self)
-            if engine.tool.isText { return }
+            if engine.tool.isText || skitchEdit { return }
         }
         begin(.secondary, event)
     }

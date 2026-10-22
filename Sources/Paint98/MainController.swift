@@ -178,7 +178,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         if engine.textBoxIsSkitch {
             // Skitch の文字は部品として置く（あとで打ち直せる）。空にした打ち直しは部品を消す
             let m = activeTextStyle.measure(s, width: box.width)
-            engine.commitSkitchText(s, measured: ISize(box.width, max(1, Int(m.height.rounded(.up)))))
+            engine.commitSkitchText(s, measured: ISize(Int(m.width.rounded(.up)), max(1, Int(m.height.rounded(.up)))))
             return
         }
         if s.isEmpty {
