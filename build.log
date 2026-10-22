@@ -1,0 +1,101 @@
+0%: Compute target dependency graph
+Building targets in dependency order
+Target dependency graph (4 targets)
+0%: Gather provisioning inputs
+0%: Create build description
+0%: Discovering version info for swiftc
+0%: Discovering version info for clang
+0%: Discovering version info for ld
+Build description signature: f23e994ae06e947d68b57792bbe6530d
+
+Build description path: /Users/runner/work/shanmopaint/shanmopaint/.build/apple/Intermediates.noindex/XCBuildData/f23e994ae06e947d68b57792bbe6530d.xcbuilddata
+
+0%: Create build directory $(TARGET_BUILD_DIR)
+0%: Build stat cache for /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk
+0%: Create build directory $(OBJROOT)
+0%: Create build directory $(TARGET_BUILD_DIR)/Release
+0%: Create build directory $(OBJROOT)/EagerLinkingTBDs/Release
+0%: Create build directory $(TARGET_BUILD_DIR)/Release/PackageFrameworks
+0%: Write PaintCore_Module.DependencyStaticMetadataFileList
+0%: Write PaintCore_Module.DependencyMetadataFileList
+0%: Write PaintCore.modulemap
+0%: Write PaintCore_Module_const_extract_protocols.json (x86_64)
+0%: Write PaintCore_Module.SwiftFileList (x86_64)
+0%: Write PaintCore_Module.SwiftConstValuesFileList
+0%: Write PaintCore_Module.LinkFileList (x86_64)
+0%: Write PaintCore_Module-OutputFileMap.json (x86_64)
+0%: Write PaintCore_Module_const_extract_protocols.json (arm64)
+0%: Write PaintCore_Module.SwiftFileList (arm64)
+0%: Write PaintCore_Module.SwiftConstValuesFileList
+0%: Write PaintCore_Module.LinkFileList (arm64)
+0%: Write PaintCore_Module-OutputFileMap.json (arm64)
+0%: Copy PaintCore.modulemap
+0%: Write Paint98.DependencyStaticMetadataFileList
+0%: Write Paint98.DependencyMetadataFileList
+0%: Write Paint98_const_extract_protocols.json (x86_64)
+0%: Write Paint98.SwiftFileList (x86_64)
+0%: Write Paint98.LinkFileList (x86_64)
+0%: Write Paint98-OutputFileMap.json (x86_64)
+0%: Write Paint98_const_extract_protocols.json (arm64)
+40%: Write Paint98.SwiftFileList (arm64)
+40%: Write Paint98.LinkFileList (arm64)
+40%: Write Paint98-OutputFileMap.json (arm64)
+46%: Planning Swift module PaintCore (x86_64)
+46%: Planning Swift module PaintCore (arm64)
+47%: Compiling Annotation.swift, Bitmap.swift, Color.swift, Geometry.swift, History.swift, PaintEngine.swift, Raster.swift, Selection.swift
+47%: Compiling Annotation.swift, Bitmap.swift, Color.swift, Geometry.swift, History.swift, PaintEngine.swift, Raster.swift, Selection.swift
+47%: Compile PaintCore_Module (x86_64)
+47%: Compile PaintCore_Module (arm64)
+47%: Compile 8 Swift source files (x86_64)
+47%: Compile 8 Swift source files (arm64)
+51%: Discovering Swift tasks after 'Compiling Annotation.swift, Bitmap.swift, Color.swift, Geometry.swift, History.swift, PaintEngine.swift, Raster.swift, Selection.swift'
+51%: Unblock downstream dependents of PaintCore_Module (arm64)
+51%: Copy PaintCore.swiftdoc (arm64)
+51%: Copy PaintCore.swiftmodule (arm64)
+51%: Copy PaintCore.abi.json (arm64)
+51%: Copy PaintCore.swiftsourceinfo (arm64)
+51%: Discovering Swift tasks after 'Compiling Annotation.swift, Bitmap.swift, Color.swift, Geometry.swift, History.swift, PaintEngine.swift, Raster.swift, Selection.swift'
+51%: Unblock downstream dependents of PaintCore_Module (x86_64)
+51%: Merge Objective-C generated interface headers
+51%: Copy PaintCore.swiftmodule (x86_64)
+51%: Copy PaintCore.swiftdoc (x86_64)
+51%: Copy PaintCore.abi.json (x86_64)
+51%: Copy PaintCore.swiftsourceinfo (x86_64)
+51%: Link PaintCore_Module.o (x86_64)
+51%: Link PaintCore_Module.o (arm64)
+51%: Planning Swift module Paint98 (arm64)
+51%: Planning Swift module Paint98 (x86_64)
+51%: Compiling AnnotationRenderer.swift, App.swift, BitmapIO.swift, CanvasView.swift, ColorBoxView.swift, Dialogs.swift, Icons.swift, MainController.swift, MainView.swift, SelfTest.swift, SkitchBarView.swift, TextTool.swift, ToolboxView.swift, Win98.swift
+51%: Compiling AnnotationRenderer.swift, App.swift, BitmapIO.swift, CanvasView.swift, ColorBoxView.swift, Dialogs.swift, Icons.swift, MainController.swift, MainView.swift, SelfTest.swift, SkitchBarView.swift, TextTool.swift, ToolboxView.swift, Win98.swift
+51%: Compile Paint98 (x86_64)
+51%: Create universal binary PaintCore_Module.o
+51%: Compile Paint98 (arm64)
+51%: Extract app intents metadata
+51%: Compile 14 Swift source files (arm64)
+51%: Compile 14 Swift source files (x86_64)
+2026-10-22 08:37:22.933 appintentsmetadataprocessor[1498:7806] Starting appintentsmetadataprocessor export
+2026-10-22 08:37:23.007 appintentsmetadataprocessor[1498:7806] Extracted no relevant App Intents symbols, skipping writing output
+
+77%: Register execution policy exception for PaintCore_Module.o
+79%: Discovering Swift tasks after 'Compiling AnnotationRenderer.swift, App.swift, BitmapIO.swift, CanvasView.swift, ColorBoxView.swift, Dialogs.swift, Icons.swift, MainController.swift, MainView.swift, SelfTest.swift, SkitchBarView.swift, TextTool.swift, ToolboxView.swift, Win98.swift'
+79%: Unblock downstream dependents of Paint98 (arm64)
+79%: Copy Paint98.swiftmodule (arm64)
+79%: Link Paint98 (arm64)
+79%: Copy Paint98.swiftdoc (arm64)
+79%: Copy Paint98.abi.json (arm64)
+79%: Copy Paint98.swiftsourceinfo (arm64)
+87%: Discovering Swift tasks after 'Compiling AnnotationRenderer.swift, App.swift, BitmapIO.swift, CanvasView.swift, ColorBoxView.swift, Dialogs.swift, Icons.swift, MainController.swift, MainView.swift, SelfTest.swift, SkitchBarView.swift, TextTool.swift, ToolboxView.swift, Win98.swift'
+87%: Unblock downstream dependents of Paint98 (x86_64)
+87%: Copy Paint98.swiftmodule (x86_64)
+87%: Copy Paint98.swiftdoc (x86_64)
+87%: Link Paint98 (x86_64)
+87%: Copy Paint98.abi.json (x86_64)
+87%: Copy Paint98.swiftsourceinfo (x86_64)
+95%: Create universal binary Paint98
+95%: Generate Paint98.dSYM for Paint98
+98%: Register execution policy exception for Paint98
+100%: Build succeeded
+Build complete!
+icon written to /Users/runner/work/shanmopaint/shanmopaint/dist/AppIcon.iconset
+dist/Paint98.app: replacing existing signature
+できた: dist/Paint98.app / dist/Paint98.zip

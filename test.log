@@ -1,0 +1,270 @@
+Building for debugging...
+[0/12] /Users/runner/work/shanmopaint/shanmopaint/.build/arm64-apple-macosx/debug/Paint98PackageTests.derived/runner.swift
+[0/12] Write sources
+[5/12] Write Paint98-entitlement.plist
+[6/12] Write swift-version--79AA4F9932D1E87A.txt
+[8/19] Emitting module PaintCore
+[9/21] Compiling PaintCore Raster.swift
+[10/21] Compiling PaintCore Selection.swift
+[11/21] Compiling PaintCore Geometry.swift
+[12/21] Compiling PaintCore History.swift
+[13/21] Compiling PaintCore PaintEngine.swift
+[14/21] Compiling PaintCore Annotation.swift
+[15/21] Compiling PaintCore Bitmap.swift
+[16/21] Compiling PaintCore Color.swift
+[17/34] Emitting module Paint98
+[18/34] Compiling Paint98 AnnotationRenderer.swift
+[19/34] Compiling Paint98 App.swift
+[20/34] Compiling Paint98 BitmapIO.swift
+[21/34] Compiling Paint98 CanvasView.swift
+[22/34] Compiling Paint98 ColorBoxView.swift
+[23/34] Compiling Paint98 Dialogs.swift
+[24/34] Compiling Paint98 Icons.swift
+[25/34] Compiling Paint98 MainController.swift
+[26/34] Compiling Paint98 MainView.swift
+[27/34] Compiling Paint98 SelfTest.swift
+[28/38] Compiling Paint98 SkitchBarView.swift
+[29/38] Compiling Paint98 TextTool.swift
+[30/38] Compiling Paint98 ToolboxView.swift
+[31/38] Compiling Paint98 Win98.swift
+[31/38] Write Objects.LinkFileList
+[32/38] Linking Paint98
+[33/38] Applying Paint98
+[35/38] Emitting module PaintCoreTests
+[36/38] Compiling PaintCoreTests PaintCoreTests.swift
+[37/40] Compiling Paint98PackageTests runner.swift
+[38/40] Emitting module Paint98PackageTests
+[38/40] Write Objects.LinkFileList
+[39/40] Linking Paint98PackageTests
+Build complete! (33.78s)
+Test Suite 'All tests' started at 2026-10-22 08:37:04.041.
+Test Suite 'Paint98PackageTests.xctest' started at 2026-10-22 08:37:04.043.
+Test Suite 'EngineTests' started at 2026-10-22 08:37:04.043.
+Test Case '-[PaintCoreTests.EngineTests testAirbrushTicks]' started.
+Test Case '-[PaintCoreTests.EngineTests testAirbrushTicks]' passed (0.004 seconds).
+Test Case '-[PaintCoreTests.EngineTests testColorEraserOnlyReplacesPrimary]' started.
+Test Case '-[PaintCoreTests.EngineTests testColorEraserOnlyReplacesPrimary]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testCommitAfterSaveIsNotAModification]' started.
+Test Case '-[PaintCoreTests.EngineTests testCommitAfterSaveIsNotAModification]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.EngineTests testCopyWithoutSelectionCopiesWholeCanvas]' started.
+Test Case '-[PaintCoreTests.EngineTests testCopyWithoutSelectionCopiesWholeCanvas]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testCropToSelection]' started.
+Test Case '-[PaintCoreTests.EngineTests testCropToSelection]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testCurveThreeSteps]' started.
+Test Case '-[PaintCoreTests.EngineTests testCurveThreeSteps]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testCutLeavesBackgroundAndReturnsImage]' started.
+Test Case '-[PaintCoreTests.EngineTests testCutLeavesBackgroundAndReturnsImage]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testDeletingFloatingPasteIsUndoable]' started.
+Test Case '-[PaintCoreTests.EngineTests testDeletingFloatingPasteIsUndoable]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testFillAndPicker]' started.
+Test Case '-[PaintCoreTests.EngineTests testFillAndPicker]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testFinishPendingClosesPolygonAndCommitsSelection]' started.
+Test Case '-[PaintCoreTests.EngineTests testFinishPendingClosesPolygonAndCommitsSelection]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testFlattenedIncludesFloatingSelectionWithoutCommitting]' started.
+Test Case '-[PaintCoreTests.EngineTests testFlattenedIncludesFloatingSelectionWithoutCommitting]' passed (0.002 seconds).
+Test Case '-[PaintCoreTests.EngineTests testFreeSelectMask]' started.
+Test Case '-[PaintCoreTests.EngineTests testFreeSelectMask]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.EngineTests testLargerImageOnUsedCanvasStillFloats]' started.
+Test Case '-[PaintCoreTests.EngineTests testLargerImageOnUsedCanvasStillFloats]' passed (0.002 seconds).
+Test Case '-[PaintCoreTests.EngineTests testLoadIsNotPristine]' started.
+Test Case '-[PaintCoreTests.EngineTests testLoadIsNotPristine]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.EngineTests testMagnifierEmitsEvent]' started.
+Test Case '-[PaintCoreTests.EngineTests testMagnifierEmitsEvent]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testNewImageResetsState]' started.
+Test Case '-[PaintCoreTests.EngineTests testNewImageResetsState]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testOpenedImageNeverBecomesPristineByUndo]' started.
+Test Case '-[PaintCoreTests.EngineTests testOpenedImageNeverBecomesPristineByUndo]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testOptionDragDuplicates]' started.
+Test Case '-[PaintCoreTests.EngineTests testOptionDragDuplicates]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteAsNewImage]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteAsNewImage]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteAtNegativeOriginEmitsCanvasSize]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteAtNegativeOriginEmitsCanvasSize]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteAtNegativeOriginGrowsLeftAndUp]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteAtNegativeOriginGrowsLeftAndUp]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteAtOnHugeCanvasThatFits]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteAtOnHugeCanvasThatFits]' passed (0.044 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteAtRejectsHugeGrowth]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteAtRejectsHugeGrowth]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteAtSpecifiedPosition]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteAtSpecifiedPosition]' passed (0.003 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteCommitsPreviousSelection]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteCommitsPreviousSelection]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteIntoPristineCanvasResizesToImage]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteIntoPristineCanvasResizesToImage]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteLargerImageGrowsCanvasAndFillsWithBackground]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteLargerImageGrowsCanvasAndFillsWithBackground]' passed (0.002 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPasteSmallerImageFloatsAndCanBePositioned]' started.
+Test Case '-[PaintCoreTests.EngineTests testPasteSmallerImageFloatsAndCanBePositioned]' passed (0.002 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPencilStrokeAndUndoRedo]' started.
+Test Case '-[PaintCoreTests.EngineTests testPencilStrokeAndUndoRedo]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testPolygonClosesOnDoubleClick]' started.
+Test Case '-[PaintCoreTests.EngineTests testPolygonClosesOnDoubleClick]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.EngineTests testResizeSelectionWithHandle]' started.
+Test Case '-[PaintCoreTests.EngineTests testResizeSelectionWithHandle]' passed (0.002 seconds).
+Test Case '-[PaintCoreTests.EngineTests testRightButtonShapeSwapsColors]' started.
+Test Case '-[PaintCoreTests.EngineTests testRightButtonShapeSwapsColors]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testRotateSelectionOnly]' started.
+Test Case '-[PaintCoreTests.EngineTests testRotateSelectionOnly]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testSelectAllAndDelete]' started.
+Test Case '-[PaintCoreTests.EngineTests testSelectAllAndDelete]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testSelectCopyCutAndMove]' started.
+Test Case '-[PaintCoreTests.EngineTests testSelectCopyCutAndMove]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testShapePreviewDoesNotTouchCanvasUntilMouseUp]' started.
+Test Case '-[PaintCoreTests.EngineTests testShapePreviewDoesNotTouchCanvasUntilMouseUp]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testStretchAndInvertWholeCanvas]' started.
+Test Case '-[PaintCoreTests.EngineTests testStretchAndInvertWholeCanvas]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testSwitchingToolCommitsPendingPolygon]' started.
+Test Case '-[PaintCoreTests.EngineTests testSwitchingToolCommitsPendingPolygon]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testSwitchingToolDropsTextBox]' started.
+Test Case '-[PaintCoreTests.EngineTests testSwitchingToolDropsTextBox]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testTextBackgroundRect]' started.
+Test Case '-[PaintCoreTests.EngineTests testTextBackgroundRect]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.EngineTests testTextBoxAndCommit]' started.
+Test Case '-[PaintCoreTests.EngineTests testTextBoxAndCommit]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.EngineTests testTextBoxStaysInsideCanvas]' started.
+Test Case '-[PaintCoreTests.EngineTests testTextBoxStaysInsideCanvas]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testTransparencyChangeUnderFloatingPasteMarksModified]' started.
+Test Case '-[PaintCoreTests.EngineTests testTransparencyChangeUnderFloatingPasteMarksModified]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testTransparentPasteSkipsBackgroundColor]' started.
+Test Case '-[PaintCoreTests.EngineTests testTransparentPasteSkipsBackgroundColor]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testUndoBackToPristineFitsNextPaste]' started.
+Test Case '-[PaintCoreTests.EngineTests testUndoBackToPristineFitsNextPaste]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.EngineTests testUndoFloatingPasteRestoresCanvasAndSize]' started.
+Test Case '-[PaintCoreTests.EngineTests testUndoFloatingPasteRestoresCanvasAndSize]' passed (0.001 seconds).
+Test Suite 'EngineTests' passed at 2026-10-22 08:37:04.119.
+	 Executed 46 tests, with 0 failures (0 unexpected) in 0.074 (0.076) seconds
+Test Suite 'GeometryAndBitmapTests' started at 2026-10-22 08:37:04.119.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testCanvasPointFloorsNegative]' started.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testCanvasPointFloorsNegative]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testCropOutsideFillsAndDrawClips]' started.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testCropOutsideFillsAndDrawClips]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testHexRoundTrip]' started.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testHexRoundTrip]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testPremultipliedBlend]' started.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testPremultipliedBlend]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testRectSpanningAndIntersection]' started.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testRectSpanningAndIntersection]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testRotationsAndFlips]' started.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testRotationsAndFlips]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testScaledNearest]' started.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testScaledNearest]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testTransparentKeyAndMask]' started.
+Test Case '-[PaintCoreTests.GeometryAndBitmapTests testTransparentKeyAndMask]' passed (0.000 seconds).
+Test Suite 'GeometryAndBitmapTests' passed at 2026-10-22 08:37:04.120.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'PastePlacementTests' started at 2026-10-22 08:37:04.120.
+Test Case '-[PaintCoreTests.PastePlacementTests testAnchors]' started.
+Test Case '-[PaintCoreTests.PastePlacementTests testAnchors]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.PastePlacementTests testLargerImageGrowsCanvas]' started.
+Test Case '-[PaintCoreTests.PastePlacementTests testLargerImageGrowsCanvas]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.PastePlacementTests testPristineCanvasBecomesImageSize]' started.
+Test Case '-[PaintCoreTests.PastePlacementTests testPristineCanvasBecomesImageSize]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.PastePlacementTests testPristineFitCanBeDisabled]' started.
+Test Case '-[PaintCoreTests.PastePlacementTests testPristineFitCanBeDisabled]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.PastePlacementTests testSmallerImageGoesToVisibleOriginClamped]' started.
+Test Case '-[PaintCoreTests.PastePlacementTests testSmallerImageGoesToVisibleOriginClamped]' passed (0.000 seconds).
+Test Suite 'PastePlacementTests' passed at 2026-10-22 08:37:04.121.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'RasterTests' started at 2026-10-22 08:37:04.121.
+Test Case '-[PaintCoreTests.RasterTests testBezierEndpoints]' started.
+Test Case '-[PaintCoreTests.RasterTests testBezierEndpoints]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.RasterTests testBrushShapes]' started.
+Test Case '-[PaintCoreTests.RasterTests testBrushShapes]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.RasterTests testConstrain]' started.
+Test Case '-[PaintCoreTests.RasterTests testConstrain]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.RasterTests testEllipseIsSymmetricAndInsideRect]' started.
+Test Case '-[PaintCoreTests.RasterTests testEllipseIsSymmetricAndInsideRect]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.RasterTests testFloodFillLargeAreaDoesNotOverflow]' started.
+Test Case '-[PaintCoreTests.RasterTests testFloodFillLargeAreaDoesNotOverflow]' passed (0.060 seconds).
+Test Case '-[PaintCoreTests.RasterTests testFloodFillStopsAtBorder]' started.
+Test Case '-[PaintCoreTests.RasterTests testFloodFillStopsAtBorder]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.RasterTests testLineEndpointsIncluded]' started.
+Test Case '-[PaintCoreTests.RasterTests testLineEndpointsIncluded]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.RasterTests testOutlineAndFillColors]' started.
+Test Case '-[PaintCoreTests.RasterTests testOutlineAndFillColors]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.RasterTests testPolygonFill]' started.
+Test Case '-[PaintCoreTests.RasterTests testPolygonFill]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.RasterTests testSprayStaysInRadius]' started.
+Test Case '-[PaintCoreTests.RasterTests testSprayStaysInRadius]' passed (0.001 seconds).
+Test Suite 'RasterTests' passed at 2026-10-22 08:37:04.185.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.064 (0.064) seconds
+Test Suite 'SkitchTests' started at 2026-10-22 08:37:04.185.
+Test Case '-[PaintCoreTests.SkitchTests testArrowHitTestFollowsShape]' started.
+Test Case '-[PaintCoreTests.SkitchTests testArrowHitTestFollowsShape]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testBakeAnnotations]' started.
+Test Case '-[PaintCoreTests.SkitchTests testBakeAnnotations]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testBoxCreateResizeMove]' started.
+Test Case '-[PaintCoreTests.SkitchTests testBoxCreateResizeMove]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testBoxShiftMakesSquare]' started.
+Test Case '-[PaintCoreTests.SkitchTests testBoxShiftMakesSquare]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testClearImageRemovesPartsUndoably]' started.
+Test Case '-[PaintCoreTests.SkitchTests testClearImageRemovesPartsUndoably]' passed (0.010 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testCropDropsPartsOutside]' started.
+Test Case '-[PaintCoreTests.SkitchTests testCropDropsPartsOutside]' passed (0.002 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testCropKeepsPartsEditableAndShifted]' started.
+Test Case '-[PaintCoreTests.SkitchTests testCropKeepsPartsEditableAndShifted]' passed (0.003 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testCutTakesPaintOnlyAndCopyIsWysiwyg]' started.
+Test Case '-[PaintCoreTests.SkitchTests testCutTakesPaintOnlyAndCopyIsWysiwyg]' passed (0.003 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testDeleteAndUndoRestoresPart]' started.
+Test Case '-[PaintCoreTests.SkitchTests testDeleteAndUndoRestoresPart]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testDoubleClickEditsTextWithOtherSkitchTool]' started.
+Test Case '-[PaintCoreTests.SkitchTests testDoubleClickEditsTextWithOtherSkitchTool]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testHeldArrowKeyNudgesCoalesceIntoOneUndo]' started.
+Test Case '-[PaintCoreTests.SkitchTests testHeldArrowKeyNudgesCoalesceIntoOneUndo]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testHistorySharesUnchangedCanvas]' started.
+Test Case '-[PaintCoreTests.SkitchTests testHistorySharesUnchangedCanvas]' passed (0.002 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testPartsMarkModifiedAndCountAsNotPristine]' started.
+Test Case '-[PaintCoreTests.SkitchTests testPartsMarkModifiedAndCountAsNotPristine]' passed (0.002 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testPartsStayAboveThePaintingAndAreNotBaked]' started.
+Test Case '-[PaintCoreTests.SkitchTests testPartsStayAboveThePaintingAndAreNotBaked]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testPickerPicksVisiblePartColor]' started.
+Test Case '-[PaintCoreTests.SkitchTests testPickerPicksVisiblePartColor]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testReclickingSelectedColorRecolorsStamp]' started.
+Test Case '-[PaintCoreTests.SkitchTests testReclickingSelectedColorRecolorsStamp]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testRedoMidMarqueeClearsMarquee]' started.
+Test Case '-[PaintCoreTests.SkitchTests testRedoMidMarqueeClearsMarquee]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testReselectAndAdjustLaterWithAnySkitchTool]' started.
+Test Case '-[PaintCoreTests.SkitchTests testReselectAndAdjustLaterWithAnySkitchTool]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testSelectingSyncsToolbarAndToolbarEditsSelection]' started.
+Test Case '-[PaintCoreTests.SkitchTests testSelectingSyncsToolbarAndToolbarEditsSelection]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testShortArrowIsNotPlacedAndOverShrinkRestores]' started.
+Test Case '-[PaintCoreTests.SkitchTests testShortArrowIsNotPlacedAndOverShrinkRestores]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testShortTextGrabAreaIsTextWidth]' started.
+Test Case '-[PaintCoreTests.SkitchTests testShortTextGrabAreaIsTextWidth]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testSkitchColorIsIndependentOfPaintColors]' started.
+Test Case '-[PaintCoreTests.SkitchTests testSkitchColorIsIndependentOfPaintColors]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testStampClickOnEmptyFirstDeselectsThenPlaces]' started.
+Test Case '-[PaintCoreTests.SkitchTests testStampClickOnEmptyFirstDeselectsThenPlaces]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testStampDragSizesOnPlacement]' started.
+Test Case '-[PaintCoreTests.SkitchTests testStampDragSizesOnPlacement]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testTextCreateAndReEdit]' started.
+Test Case '-[PaintCoreTests.SkitchTests testTextCreateAndReEdit]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testTextSizeChangeOnSelectedTextRemeasures]' started.
+Test Case '-[PaintCoreTests.SkitchTests testTextSizeChangeOnSelectedTextRemeasures]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testTextSizeUpKeepsLineBreaks]' started.
+Test Case '-[PaintCoreTests.SkitchTests testTextSizeUpKeepsLineBreaks]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testTextToolOnlyGrabsTextParts]' started.
+Test Case '-[PaintCoreTests.SkitchTests testTextToolOnlyGrabsTextParts]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testThickBoxRimIsGrabbableWhenZoomed]' started.
+Test Case '-[PaintCoreTests.SkitchTests testThickBoxRimIsGrabbableWhenZoomed]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testToolGroups]' started.
+Test Case '-[PaintCoreTests.SkitchTests testToolGroups]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testToolSwitchDuringDragRecordsThePart]' started.
+Test Case '-[PaintCoreTests.SkitchTests testToolSwitchDuringDragRecordsThePart]' passed (0.008 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testUnchangedReEditKeepsShapeAndHistory]' started.
+Test Case '-[PaintCoreTests.SkitchTests testUnchangedReEditKeepsShapeAndHistory]' passed (0.001 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testUndoDuringDragCancelsCleanly]' started.
+Test Case '-[PaintCoreTests.SkitchTests testUndoDuringDragCancelsCleanly]' passed (0.000 seconds).
+Test Case '-[PaintCoreTests.SkitchTests testWholeImageTransformBakesPartsInOneUndo]' started.
+Test Case '-[PaintCoreTests.SkitchTests testWholeImageTransformBakesPartsInOneUndo]' passed (0.001 seconds).
+Test Suite 'SkitchTests' passed at 2026-10-22 08:37:04.228.
+	 Executed 34 tests, with 0 failures (0 unexpected) in 0.041 (0.043) seconds
+Test Suite 'Paint98PackageTests.xctest' passed at 2026-10-22 08:37:04.228.
+	 Executed 103 tests, with 0 failures (0 unexpected) in 0.180 (0.185) seconds
+Test Suite 'All tests' passed at 2026-10-22 08:37:04.228.
+	 Executed 103 tests, with 0 failures (0 unexpected) in 0.180 (0.187) seconds
+◇ Test run started.
+↳ Testing Library Version: 124.4
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests passed after 0.001 seconds.
