@@ -1154,5 +1154,31 @@ final class EngineTests: XCTestCase {
         XCTAssertNil(a.part(at: CanvasPoint(230.5, 50.5), tolerance: 5), "先端の先は当たらない")
         XCTAssertEqual(a.part(at: CanvasPoint(190.5, 58.5), tolerance: 5), .body, "頭の幅の中は当たる")
     }
+
+    func testReclickingSelectedSkitchColorRecolorsStamp() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.stamp)
+        e.options.stampKind = .check
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        XCTAssertEqual(e.annotation?.color, StampKind.check.defaultColor)
+        e.skitchColor = Annotation.skitchRed
+        XCTAssertEqual(e.annotation?.color, Annotation.skitchRed, "選んでいる赤をもう一度押すとスタンプも赤に")
+    }
+
+    func testThickBoxRimIsGrabbableWhenZoomed() {
+        let e = makeEngine(200, 200)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.zoom = 8
+        e.options.skitchThickness = 3
+        e.setTool(.skitchBox)
+        e.mouseDown(at: cp(20, 20), button: .primary)
+        e.mouseDragged(to: cp(120, 120))
+        e.mouseUp(at: cp(120, 120))
+        // 太い枠線（8 ピクセル）の内側寄りの所
+        XCTAssertEqual(e.annotationPart(at: CanvasPoint(27.5, 60.5)), .body)
+        XCTAssertNil(e.annotationPart(at: CanvasPoint(10.5, 60.5)), "描いていない外側はつかめない")
+    }
 }
 

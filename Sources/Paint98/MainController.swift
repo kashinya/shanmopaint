@@ -22,7 +22,10 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     private var editingPaletteIndex: Int?
 
     var textStyle = TextStyle() {
-        didSet { canvasView.applyTextStyle() }
+        didSet {
+            updateDefaultTextBoxSize()
+            canvasView.applyTextStyle()
+        }
     }
     private lazy var fontPanel: FontPanelController = {
         let c = FontPanelController(style: textStyle)
@@ -59,9 +62,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             self.canvasView.applyTextStyle()
             self.canvasView.needsDisplay = true
         }
-        if let saved = UserDefaults.standard.string(forKey: "skitchColor"), let p = Colors.parseHex(saved) {
-            engine.skitchColor = p
-        }
+
         mainView.colorBox.onHover = { [weak self] s in self?.statusBar.hint = s }
         engine.listener = { [weak self] e in self?.handle(e) }
         engine.annotationRenderer = { a, clip in AnnotationRenderer.render(a, clip: clip) }
@@ -101,7 +102,6 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         case .colors:
             mainView.colorBox.needsDisplay = true
             mainView.skitchBar.needsDisplay = true
-            UserDefaults.standard.set(Colors.hexString(engine.skitchColor), forKey: "skitchColor")
             canvasView.applyTextStyle()
         case .textBox:
             canvasView.syncTextView()

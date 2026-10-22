@@ -143,8 +143,10 @@ public struct Annotation: Equatable {
                 if abs(p.x - hp.x) <= ht + 1 && abs(p.y - hp.y) <= ht + 1 { return .boxHandle(h) }
             }
             // 枠線のあたりだけつかめる（中は空けておき、内側に別の矢印などを置けるように）
-            let band = Self.boxStrokeWidth(thickness) / 2 + Self.boxOutline(thickness) + tolerance
-            let l = Double(r.minX), t = Double(r.minY), rr = Double(r.maxX), b = Double(r.maxY)
+            // 枠線は四角の内側に描くので、判定の帯も描いた線の中心に合わせる
+            let c = Self.boxStrokeWidth(thickness) / 2
+            let band = c + Self.boxOutline(thickness) + tolerance
+            let l = Double(r.minX) + c, t = Double(r.minY) + c, rr = Double(r.maxX) - c, b = Double(r.maxY) - c
             let inOuter = p.x >= l - band && p.x <= rr + band && p.y >= t - band && p.y <= b + band
             let inInner = p.x > l + band && p.x < rr - band && p.y > t + band && p.y < b - band
             if inOuter && !inInner { return .body }

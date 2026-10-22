@@ -94,7 +94,8 @@ public final class PaintEngine {
     public var skitchColor: Pixel = Annotation.skitchRed {
         didSet {
             emit(.colors)
-            if annotation != nil && skitchColor != oldValue { annotation!.color = skitchColor; emit(.display) }
+            // 選んでいる色をもう一度クリックしても、色の違うスタンプには効くように（oldValue ではなく注釈の色と比べる）
+            if let a = annotation, a.color != skitchColor { annotation!.color = skitchColor; emit(.display) }
         }
     }
     public var secondary: Pixel = Colors.white {

@@ -370,12 +370,14 @@ final class SelfTest {
                 self.drag(IPoint(40, 220), IPoint(290, 280))
                 self.c.canvasView.textView?.insertText("文字入れ Skitch", replacementRange: NSRange(location: NSNotFound, length: 0))
                 self.snapshot("12-skitch-text-editing")
+                let beforeCommit = self.engine.canvas
                 self.c.commitText()
+                // 確定で描き変わった画素だけ数える（すぐ横の四角の赤を数えないように）
                 var pink = 0
                 for y in 215..<290 {
                     for x in 35..<300 {
                         let p = self.engine.canvas[x, y]
-                        if Colors.red(p) > 200 && Colors.green(p) < 120 && Colors.blue(p) > 90 { pink += 1 }
+                        if p != beforeCommit[x, y] && Colors.red(p) > 200 && Colors.green(p) < 120 && Colors.blue(p) > 90 { pink += 1 }
                     }
                 }
                 self.check(pink > 150, "文字の色の画素がある（\(pink) 画素）")

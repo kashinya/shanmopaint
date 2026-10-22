@@ -225,7 +225,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
             // 入力枠の外をクリック：文字を確定（このクリックでは新しい枠を作らない）
             controller?.commitText()
             window?.makeFirstResponder(self)
-            if engine.tool == .text { return }
+            if engine.tool.isText { return }
         }
         window?.makeFirstResponder(self)
         if let h = canvasHandle(at: p) {
@@ -239,7 +239,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
         if textView != nil {
             controller?.commitText()
             window?.makeFirstResponder(self)
-            if engine.tool == .text { return }
+            if engine.tool.isText { return }
         }
         begin(.secondary, event)
     }
