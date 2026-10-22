@@ -14,6 +14,8 @@ enum AnnotationRenderer {
             return renderArrow(tail: t, head: h, color: a.color, thickness: a.thickness, clip: clip)
         case .box(let r):
             return renderBox(r, color: a.color, thickness: a.thickness, clip: clip)
+        case .text(let s, let f, let size):
+            return renderText(s, frame: f, size: size, color: a.color)
         case .stamp(let kind, let c, let r):
             return renderStamp(kind, center: c, radius: r, color: a.color, clip: clip)
         }
@@ -70,6 +72,16 @@ enum AnnotationRenderer {
             ctx.fillPath()
             ctx.endTransparencyLayer()
         }
+    }
+
+    // MARK: - 文字
+
+    /// Skitch の文字（太字・白ふち・影）。frame の左上が文字の原点、幅で折り返す。
+    static func renderText(_ s: String, frame: IRect, size: Int, color: Pixel) -> RenderedAnnotation? {
+        guard !s.isEmpty, frame.width > 0,
+              let r = TextStyle.skitch(size: size).render(s, width: frame.width, minHeight: 0, color: Win98.color(color))
+        else { return nil }
+        return RenderedAnnotation(image: r.image, origin: IPoint(frame.x - r.margin, frame.y - r.margin))
     }
 
     // MARK: - 四角

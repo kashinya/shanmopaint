@@ -36,6 +36,27 @@ struct TextStyle: Equatable {
         return f
     }
 
+    /// Skitch の文字の書式（太字・白ふち・影）。
+    static func skitch(size: Int) -> TextStyle {
+        var s = TextStyle()
+        s.bold = true
+        s.outline = true
+        s.size = CGFloat(size)
+        return s
+    }
+
+    /// 幅 width で折り返したときの文字の大きさ。
+    func measure(_ text: String, width: Int) -> CGSize {
+        let storage = NSTextStorage(string: text, attributes: attributes(scale: 1, color: .black))
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: CGFloat(width), height: CGFloat.greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        layout.addTextContainer(container)
+        storage.addLayoutManager(layout)
+        layout.ensureLayout(for: container)
+        return layout.usedRect(for: container).size
+    }
+
     func attributes(scale: CGFloat, color: NSColor) -> [NSAttributedString.Key: Any] {
         // タブ位置も表示倍率に合わせる（入力中と確定後で位置がずれないように）
         let para = NSMutableParagraphStyle()

@@ -121,9 +121,13 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
             }
         }
         if let tb = engine.textBox { dotted(viewRect(tb).insetBy(dx: -1, dy: -1)) }
-        if let a = engine.annotation, engine.tool.placesAnnotation {
-            if case .stamp(_, let c, let r) = a.shape {
-                dotted(viewRect(IRect(x: c.x - r, y: c.y - r, width: 2 * r + 1, height: 2 * r + 1)))
+        if let a = engine.annotation, engine.tool.isSkitch, engine.editingAnnotation == nil {
+            // 選んでいる部品：スタンプと文字は点線で囲み、つまみを出す
+            switch a.shape {
+            case .stamp, .text:
+                if let f = a.selectionFrame { dotted(viewRect(f).insetBy(dx: -3, dy: -3)) }
+            default:
+                break
             }
             for hp in a.handles {
                 let p = NSPoint(x: Self.inset + CGFloat(hp.x) * zoom, y: Self.inset + CGFloat(hp.y) * zoom)
@@ -425,6 +429,8 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
     private func createTextView(_ box: IRect) {
         textUndo = UndoManager()
         let tv = PaintTextView(frame: viewRect(box))
+        // 置いてある Skitch の文字を打ち直すときは、元の文字を入れておく
+        if engine.editingAnnotation != nil { tv.string = engine.textEditInitial }
         tv.onPasteImage = { [weak self] in self?.controller?.paste(nil) }
         tv.onStyleShortcut = { [weak self] ch in self?.controller?.toggleTextStyle(ch) }
         tv.isRichText = false
@@ -446,6 +452,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
         textView = tv
         applyTextStyle()
         window?.makeFirstResponder(tv)
+        tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
         needsDisplay = true
     }
 
@@ -474,7 +481,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
             storage.setAttributes(attrs, range: NSRange(location: 0, length: storage.length))
         }
         // Skitch の文字は背景なし。ペイントの文字は「不透明」なら背景色で塗る
-        tv.drawsBackground = engine.tool == .text && !engine.options.transparentBackground
+        tv.drawsBackground = !engine.textBoxIsSkitch && engine.tool == .text && !engine.options.transparentBackground
         tv.backgroundColor = Win98.color(engine.secondary)
         fitTextBox()
     }

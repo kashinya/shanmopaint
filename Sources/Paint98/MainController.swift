@@ -66,6 +66,10 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         mainView.colorBox.onHover = { [weak self] s in self?.statusBar.hint = s }
         engine.listener = { [weak self] e in self?.handle(e) }
         engine.annotationRenderer = { a, clip in AnnotationRenderer.render(a, clip: clip) }
+        engine.textMeasurer = { s, w, size in
+            let m = TextStyle.skitch(size: size).measure(s, width: w)
+            return ISize(Int(m.width.rounded(.up)), max(1, Int(m.height.rounded(.up))))
+        }
         engine.fitCanvasToPasteWhenPristine = UserDefaults.standard.object(forKey: "fitCanvasToPaste") as? Bool ?? true
 
         updateTitle()
@@ -131,17 +135,13 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     }
 
     /// Skitch の文字の書式（太字・白ふち・影。大きさは Skitch ツールバーで選ぶ）。
-    var skitchTextStyle: TextStyle {
-        var s = TextStyle()
-        s.bold = true
-        s.outline = true
-        s.size = CGFloat(ToolOptions.skitchTextSizes[min(ToolOptions.skitchTextSizes.count - 1, max(0, engine.options.skitchTextSize))])
-        return s
-    }
+    var skitchTextStyle: TextStyle { TextStyle.skitch(size: ToolOptions.skitchTextPixels(engine.options.skitchTextSize)) }
 
-    /// 今の道具で使う文字の書式と色。
-    var activeTextStyle: TextStyle { engine.tool == .skitchText ? skitchTextStyle : textStyle }
-    var activeTextColor: NSColor { Win98.color(engine.tool == .skitchText ? engine.skitchColor : engine.primary) }
+    /// 今の入力枠で使う文字の書式と色（Skitch の文字を新しく打つ・打ち直すときは Skitch の書式）。
+    var activeTextStyle: TextStyle { engine.textBoxIsSkitch || engine.tool == .skitchText ? skitchTextStyle : textStyle }
+    var activeTextColor: NSColor {
+        Win98.color(engine.textBoxIsSkitch || engine.tool == .skitchText ? engine.skitchColor : engine.primary)
+    }
 
     /// クリックだけで作る入力枠の大きさを、文字の大きさに合わせる。
     func updateDefaultTextBoxSize() {
@@ -175,6 +175,12 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     func commitText() {
         guard let tv = canvasView.textView, let box = engine.textBox else { return }
         let s = tv.string
+        if engine.textBoxIsSkitch {
+            // Skitch の文字は部品として置く（あとで打ち直せる）。空にした打ち直しは部品を消す
+            let m = activeTextStyle.measure(s, width: box.width)
+            engine.commitSkitchText(s, measured: ISize(box.width, max(1, Int(m.height.rounded(.up)))))
+            return
+        }
         if s.isEmpty {
             engine.cancelText()
             return
@@ -391,6 +397,12 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         engine.resizeCanvas(to: s)
     }
 
+    @objc func bakeAnnotations(_ sender: Any?) {
+        commitText()
+        engine.bakeAnnotations()
+        statusBar.hint = "Skitch の部品を画像に焼き込みました（元に戻すで戻せます）。"
+    }
+
     @objc func clearImage(_ sender: Any?) {
         commitText()
         engine.clearImage()
@@ -600,7 +612,10 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
 
         ■ Skitch ツールバー（上の段）
         矢印・文字・四角・スタンプ。色は Skitch 専用（ペイントのパレットとは別）。
-        置いた直後はつまみで直せます。外側をクリックで確定、delete で削除。
+        置いたものは絵の上に乗った部品のまま残り、Skitch の道具でクリックすればいつでも選び直せます。
+        つまみで形を直す・ドラッグで移動・色や太さを変える・delete で削除。
+        文字はダブルクリック（Skitch の文字ツールならクリック）で打ち直せます。
+        保存・コピーでは部品を重ねて書き出します（保存したファイルを開き直すと部品は絵に焼き込まれています）。
 
         ■ そのほか
         左クリック: 描画色 ／ 右クリック（control+クリック）: 背景色
@@ -644,6 +659,8 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             return engine.canRedo
         case #selector(delete(_:)):
             return engine.hasSelection || engine.annotation != nil
+        case #selector(bakeAnnotations(_:)):
+            return !engine.annotations.isEmpty
         case #selector(cut(_:)), #selector(cropToSelection(_:)):
             return engine.hasSelection
         case #selector(copyToFile(_:)):

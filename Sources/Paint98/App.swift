@@ -148,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("キャンバスのサイズ…", #selector(MainController.canvasSize(_:)), "e"),
             item("選択範囲でトリミング", #selector(MainController.cropToSelection(_:)), "x", [.command, .shift]),
             item("イメージのクリア", #selector(MainController.clearImage(_:)), "n", [.command, .shift]),
+            item("Skitch の部品を画像に焼き込む", #selector(MainController.bakeAnnotations(_:))),
             sep,
             item("不透明な描画", #selector(MainController.toggleOpaque(_:))),
         ]))

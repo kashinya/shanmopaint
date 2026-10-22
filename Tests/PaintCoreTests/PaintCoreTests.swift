@@ -798,135 +798,6 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(e.canvas[5, 5], red, "塗りは描画色")
     }
 
-    // MARK: Skitch 風の注釈
-
-    /// テスト用：注釈の範囲を色で塗るだけの描画関数
-    private func fakeRenderer(_ a: Annotation) -> RenderedAnnotation? {
-        switch a.shape {
-        case .arrow(let t, let h):
-            let r = IRect.spanning(t, h)
-            return RenderedAnnotation(image: Bitmap(width: r.width, height: r.height, fill: a.color), origin: r.origin)
-        case .box(let r):
-            return RenderedAnnotation(image: Bitmap(width: r.width, height: r.height, fill: a.color), origin: r.origin)
-        case .stamp(_, let c, let rad):
-            return RenderedAnnotation(image: Bitmap(width: rad * 2, height: rad * 2, fill: a.color),
-                                      origin: IPoint(c.x - rad, c.y - rad))
-        }
-    }
-
-    func testArrowFloatsThenCommitsOnNextClick() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.skitchColor = red
-        e.setTool(.arrow)
-        e.mouseDown(at: cp(10, 10), button: .primary)
-        e.mouseDragged(to: cp(40, 30))
-        e.mouseUp(at: cp(40, 30))
-        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(10, 10), head: IPoint(40, 30)))
-        XCTAssertEqual(e.canvas[20, 20], Colors.white, "浮いている間はキャンバスに描かない")
-        XCTAssertEqual(e.renderDisplay()[20, 20], red)
-        XCTAssertEqual(e.flattened()[20, 20], red, "保存には含める")
-        // 先端をつまんで動かす
-        e.mouseDown(at: cp(40, 30), button: .primary)
-        e.mouseDragged(to: cp(50, 60))
-        e.mouseUp(at: cp(50, 60))
-        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(10, 10), head: IPoint(50, 60)))
-        // Skitch の色を変える（ペイントの描画色では変わらない）
-        e.primary = Colors.black
-        XCTAssertEqual(e.annotation?.color, red)
-        e.skitchColor = blue
-        XCTAssertEqual(e.annotation?.color, blue)
-        // 何もない所をクリック → 確定して、クリックだけなので新しい矢印は置かない
-        e.mouseDown(at: cp(90, 5), button: .primary)
-        e.mouseUp(at: cp(90, 5))
-        XCTAssertNil(e.annotation)
-        XCTAssertEqual(e.canvas[30, 40], blue)
-        e.undo()
-        XCTAssertEqual(e.canvas[30, 40], Colors.white)
-    }
-
-    func testArrowBodyDragMoves() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.arrow)
-        e.mouseDown(at: cp(10, 50), button: .primary)
-        e.mouseDragged(to: cp(60, 50))
-        e.mouseUp(at: cp(60, 50))
-        XCTAssertEqual(e.annotationPart(at: cp(30, 50)), .body)
-        e.mouseDown(at: cp(30, 50), button: .primary)
-        e.mouseDragged(to: cp(35, 60))
-        e.mouseUp(at: cp(35, 60))
-        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(15, 60), head: IPoint(65, 60)))
-        e.nudgeAnnotation(dx: 1, dy: 1)
-        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(16, 61), head: IPoint(66, 61)))
-    }
-
-    func testStampPlaceResizeAndKindChange() {
-        let e = makeEngine(200, 200)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.options.stampKind = .check
-        e.mouseDown(at: cp(100, 100), button: .primary)
-        e.mouseUp(at: cp(100, 100))
-        XCTAssertEqual(e.annotation?.shape, .stamp(.check, center: IPoint(100, 100), radius: Annotation.defaultStampRadius))
-        XCTAssertEqual(e.annotation?.color, StampKind.check.defaultColor)
-        // 角をつまんで大きく
-        let corner = e.annotation!.handles[2]
-        XCTAssertEqual(e.annotationPart(at: corner), .resize)
-        e.mouseDown(at: corner, button: .primary)
-        e.mouseDragged(to: cp(140, 140))
-        e.mouseUp(at: cp(140, 140))
-        XCTAssertEqual(e.annotation?.shape, .stamp(.check, center: IPoint(100, 100), radius: 40))
-        // オプションで種類を変える
-        e.options.stampKind = .star
-        XCTAssertEqual(e.annotation?.shape, .stamp(.star, center: IPoint(100, 100), radius: 40))
-        XCTAssertEqual(e.annotation?.color, StampKind.star.defaultColor)
-        // 道具を替えると確定
-        e.setTool(.pencil)
-        XCTAssertNil(e.annotation)
-        XCTAssertEqual(e.canvas[100, 100], StampKind.star.defaultColor)
-    }
-
-    func testStampDragSizesOnPlacement() {
-        let e = makeEngine(200, 200)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseDragged(to: cp(80, 60))
-        e.mouseUp(at: cp(80, 60))
-        XCTAssertEqual(e.annotation?.shape, .stamp(.cross, center: IPoint(50, 50), radius: 30))
-    }
-
-    func testUndoRemovesFloatingAnnotationAndDeleteKey() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        XCTAssertTrue(e.canUndo)
-        e.undo()
-        XCTAssertNil(e.annotation)
-        XCTAssertEqual(e.canvas, solid(100, 100, Colors.white))
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        e.deleteAnnotation()
-        XCTAssertNil(e.annotation)
-        e.setTool(.pencil)
-        XCTAssertEqual(e.canvas, solid(100, 100, Colors.white))
-    }
-
-    func testPasteCommitsAnnotationFirst() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        e.paste(solid(10, 10, blue), visibleOrigin: IPoint(0, 0))
-        XCTAssertNil(e.annotation)
-        XCTAssertEqual(e.canvas[50, 50], StampKind.cross.defaultColor)
-        XCTAssertEqual(e.canvas.size, ISize(100, 100), "注釈を描いたのでまっさら扱いではない")
-    }
-
     func testTextBackgroundRect() {
         let e = makeEngine(100, 60)
         e.setTool(.text)
@@ -955,161 +826,6 @@ final class EngineTests: XCTestCase {
 
     // MARK: レビュー指摘の再発防止
 
-    func testStampClickOutsideOnlyCommits() {
-        let e = makeEngine(200, 200)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        e.mouseDown(at: cp(150, 150), button: .primary)
-        e.mouseUp(at: cp(150, 150))
-        XCTAssertNil(e.annotation, "外側のクリックは確定だけ")
-        XCTAssertEqual(e.canvas[150, 150], Colors.white)
-        e.mouseDown(at: cp(150, 150), button: .secondary)
-        e.mouseUp(at: cp(150, 150))
-        XCTAssertEqual(e.annotation?.color, StampKind.cross.defaultColor, "右クリックでも白くならない")
-    }
-
-    func testDeletedAnnotationCanBeUndone() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        e.deleteAnnotation()
-        XCTAssertEqual(e.canvas[50, 50], Colors.white)
-        e.undo()
-        XCTAssertEqual(e.canvas[50, 50], StampKind.cross.defaultColor, "消す直前の見た目に戻る")
-    }
-
-    func testPaintColorsDoNotTouchSkitchAnnotation() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        e.swapColors()
-        e.primary = blue
-        XCTAssertEqual(e.annotation?.color, StampKind.cross.defaultColor, "ペイントの色とは別")
-        e.skitchColor = green
-        XCTAssertEqual(e.annotation?.color, green, "Skitch の色を選ぶと変わる")
-    }
-
-    func testSkitchDefaultColorIsVividRed() {
-        let e = makeEngine(100, 100)
-        XCTAssertEqual(e.skitchColor, Colors.rgb(235, 69, 110))
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.arrow)
-        e.mouseDown(at: cp(10, 10), button: .secondary)
-        e.mouseDragged(to: cp(60, 10))
-        e.mouseUp(at: cp(60, 10))
-        XCTAssertEqual(e.annotation?.color, Colors.rgb(235, 69, 110), "右ボタンでも Skitch の色")
-    }
-
-    func testSkitchBoxCreateResizeMoveAndCommit() {
-        let e = makeEngine(200, 200)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.skitchBox)
-        e.mouseDown(at: cp(20, 20), button: .primary)
-        e.mouseDragged(to: cp(80, 60))
-        e.mouseUp(at: cp(80, 60))
-        XCTAssertEqual(e.annotation?.shape, .box(IRect(x: 20, y: 20, width: 61, height: 41)))
-        XCTAssertEqual(e.annotation?.thickness, 2)
-        // 右下の角を引っ張る
-        let br = SelectionHandle.bottomRight.position(in: IRect(x: 20, y: 20, width: 61, height: 41))
-        XCTAssertEqual(e.annotationPart(at: br), .boxHandle(.bottomRight))
-        e.mouseDown(at: br, button: .primary)
-        e.mouseDragged(to: CanvasPoint(br.x + 20, br.y + 10))
-        e.mouseUp(at: CanvasPoint(br.x + 20, br.y + 10))
-        XCTAssertEqual(e.annotation?.shape, .box(IRect(x: 20, y: 20, width: 81, height: 51)))
-        // 中は空いている（つかめない）、枠線はつかめる
-        XCTAssertNil(e.annotationPart(at: cp(60, 45)))
-        XCTAssertEqual(e.annotationPart(at: cp(20, 45)), .boxHandle(.left), "辺の真ん中はつまみ")
-        XCTAssertEqual(e.annotationPart(at: cp(20, 30)), .body)
-        e.mouseDown(at: cp(20, 30), button: .primary)
-        e.mouseDragged(to: cp(30, 40))
-        e.mouseUp(at: cp(30, 40))
-        XCTAssertEqual(e.annotation?.shape, .box(IRect(x: 30, y: 30, width: 81, height: 51)))
-        // 太さの変更
-        e.options.skitchThickness = 3
-        XCTAssertEqual(e.annotation?.thickness, 3)
-        // 中をクリック → 確定して、クリックだけなので新しい四角は置かない
-        e.mouseDown(at: cp(60, 50), button: .primary)
-        e.mouseUp(at: cp(60, 50))
-        XCTAssertNil(e.annotation)
-        XCTAssertEqual(e.canvas[30, 30], Annotation.skitchRed)
-    }
-
-    func testSkitchBoxShiftMakesSquare() {
-        let e = makeEngine(200, 200)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.skitchBox)
-        e.mouseDown(at: cp(10, 10), button: .primary)
-        e.mouseDragged(to: cp(50, 30), modifiers: .shift)
-        e.mouseUp(at: cp(50, 30), modifiers: .shift)
-        XCTAssertEqual(e.annotation?.shape, .box(IRect(x: 10, y: 10, width: 41, height: 41)))
-    }
-
-    func testSkitchTextNeverFillsBackground() {
-        let e = makeEngine(100, 60)
-        e.options.transparentBackground = false
-        e.secondary = blue
-        e.setTool(.skitchText)
-        e.mouseDown(at: cp(10, 10), button: .primary)
-        e.mouseUp(at: cp(10, 10))
-        XCTAssertNotNil(e.textBox)
-        e.commitText(Bitmap(width: 50, height: 20, fill: Colors.clear), at: IPoint(10, 10))
-        XCTAssertEqual(e.canvas[20, 15], Colors.white, "Skitch の文字は背景を塗らない")
-    }
-
-    func testToolGroups() {
-        XCTAssertEqual(Tool.paintTools.count, 16)
-        XCTAssertEqual(Set(Tool.paintTools + Tool.skitchTools).count, Tool.allCases.count)
-        XCTAssertTrue(Tool.skitchText.isText && Tool.skitchText.isSkitch)
-        XCTAssertFalse(Tool.text.isSkitch)
-    }
-
-    func testRedoDisabledWhileAnnotationFloats() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.pencil)
-        e.mouseDown(at: cp(1, 1), button: .primary)
-        e.mouseUp(at: cp(1, 1))
-        e.undo()
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        XCTAssertFalse(e.canRedo)
-        e.redo()
-        XCTAssertNotNil(e.annotation, "やり直しで注釈を勝手に確定しない")
-    }
-
-    func testTransformCommitsAnnotationFirst() {
-        let e = makeEngine(100, 50)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(20, 20), button: .primary)
-        e.mouseUp(at: cp(20, 20))
-        e.rotateClockwise()
-        XCTAssertNil(e.annotation)
-        XCTAssertEqual(e.canvas.size, ISize(50, 100))
-        XCTAssertEqual(e.canvas[50 - 1 - 20, 20], StampKind.cross.defaultColor, "注釈ごと回る")
-    }
-
-    func testAnnotationMarksDocumentModified() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.load(solid(100, 100, Colors.white))
-        XCTAssertFalse(e.isModified)
-        e.setTool(.stamp)
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        XCTAssertTrue(e.isModified, "浮いている注釈だけでも保存の確認が要る")
-        e.markSaved()
-        e.commitAnnotation()
-        XCTAssertFalse(e.isModified, "保存直後の確定は変更扱いにしない")
-    }
-
     func testTransparencyChangeUnderFloatingPasteMarksModified() {
         let e = makeEngine(50, 50)
         e.resizeCanvas(to: ISize(50, 51))
@@ -1134,51 +850,363 @@ final class EngineTests: XCTestCase {
         XCTAssertNotNil(e.paste(solid(5, 5, red), at: IPoint(100, 2), growCanvas: true))
     }
 
-    func testShortArrowAdjustRestoresOriginal() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+}
+
+
+/// Skitch の部品（絵の上に乗っていて、あとから選び直せる）
+final class SkitchTests: XCTestCase {
+    /// テスト用：部品の範囲を色で塗るだけの描画関数
+    private func fakeRenderer(_ a: Annotation, _ clip: IRect) -> RenderedAnnotation? {
+        switch a.shape {
+        case .arrow(let t, let h):
+            let r = IRect.spanning(t, h)
+            return RenderedAnnotation(image: Bitmap(width: r.width, height: r.height, fill: a.color), origin: r.origin)
+        case .box(let r):
+            return RenderedAnnotation(image: Bitmap(width: r.width, height: r.height, fill: a.color), origin: r.origin)
+        case .stamp(_, let c, let rad):
+            return RenderedAnnotation(image: Bitmap(width: rad * 2, height: rad * 2, fill: a.color),
+                                      origin: IPoint(c.x - rad, c.y - rad))
+        case .text(_, let f, _):
+            return RenderedAnnotation(image: Bitmap(width: f.width, height: f.height, fill: a.color), origin: f.origin)
+        }
+    }
+
+    private func makeEngine(_ w: Int = 200, _ h: Int = 200) -> PaintEngine {
+        let e = PaintEngine(width: w, height: h)
+        e.annotationRenderer = fakeRenderer
+        e.textMeasurer = { s, w, size in ISize(w, size + 4) }
+        return e
+    }
+
+    private func drag(_ e: PaintEngine, _ a: IPoint, _ b: IPoint, clickCount: Int = 1, modifiers: Modifiers = []) {
+        e.mouseDown(at: cp(a.x, a.y), button: .primary, modifiers: modifiers, clickCount: clickCount)
+        e.mouseDragged(to: cp(b.x, b.y), modifiers: modifiers)
+        e.mouseUp(at: cp(b.x, b.y), modifiers: modifiers)
+    }
+
+    private func click(_ e: PaintEngine, _ p: IPoint, clickCount: Int = 1) {
+        e.mouseDown(at: cp(p.x, p.y), button: .primary, clickCount: clickCount)
+        e.mouseUp(at: cp(p.x, p.y))
+    }
+
+    func testToolGroups() {
+        XCTAssertEqual(Tool.paintTools.count, 16)
+        XCTAssertEqual(Set(Tool.paintTools + Tool.skitchTools).count, Tool.allCases.count)
+        XCTAssertTrue(Tool.skitchText.isText && Tool.skitchText.isSkitch)
+        XCTAssertFalse(Tool.text.isSkitch)
+        XCTAssertEqual(ToolOptions.skitchThicknesses, [1, 2, 3, 4, 5], "極太・超極太まで")
+        XCTAssertGreaterThan(Annotation.arrowWidth(5), Annotation.arrowWidth(3) * 2)
+    }
+
+    func testPartsStayAboveThePaintingAndAreNotBaked() {
+        let e = makeEngine()
         e.setTool(.arrow)
-        e.mouseDown(at: cp(10, 10), button: .primary)
+        drag(e, IPoint(10, 10), IPoint(60, 40))
+        XCTAssertEqual(e.annotations.count, 1)
+        XCTAssertEqual(e.canvas[30, 25], Colors.white, "絵には焼き込まない")
+        XCTAssertEqual(e.renderDisplay()[30, 25], Annotation.skitchRed)
+        XCTAssertEqual(e.flattened()[30, 25], Annotation.skitchRed, "保存には重ねる")
+        XCTAssertEqual(e.copyImage()[30, 25], Annotation.skitchRed, "コピーにも重ねる")
+        // ペイントの道具に替えても部品は残る
+        e.setTool(.pencil)
+        XCTAssertEqual(e.annotations.count, 1)
+        XCTAssertNil(e.selectedAnnotation)
+        XCTAssertNil(e.annotationPart(at: cp(30, 25)), "ペイントの道具では部品をつかめない")
+    }
+
+    func testReselectAndAdjustLaterWithAnySkitchTool() {
+        let e = makeEngine()
+        e.setTool(.arrow)
+        drag(e, IPoint(10, 10), IPoint(80, 10))
+        drag(e, IPoint(10, 100), IPoint(80, 100))
+        XCTAssertEqual(e.annotations.count, 2)
+        // 別の道具を使ってから戻っても、1 本目の先端をつまんで直せる
+        e.setTool(.pencil)
+        e.setTool(.skitchBox)
+        XCTAssertEqual(e.annotationPart(at: cp(80, 10)), .head)
+        drag(e, IPoint(80, 10), IPoint(90, 30))
+        XCTAssertEqual(e.annotations[0].shape, .arrow(tail: IPoint(10, 10), head: IPoint(90, 30)))
+        XCTAssertEqual(e.selectedAnnotation, 0)
+        // 本体をつかんで移動
+        drag(e, IPoint(40, 100), IPoint(40, 120))
+        XCTAssertEqual(e.annotations[1].shape, .arrow(tail: IPoint(10, 120), head: IPoint(80, 120)))
+        // 元に戻すは 1 操作ずつ
+        e.undo()
+        XCTAssertEqual(e.annotations[1].shape, .arrow(tail: IPoint(10, 100), head: IPoint(80, 100)))
+        e.undo()
+        XCTAssertEqual(e.annotations[0].shape, .arrow(tail: IPoint(10, 10), head: IPoint(80, 10)))
+        e.redo()
+        XCTAssertEqual(e.annotations[0].shape, .arrow(tail: IPoint(10, 10), head: IPoint(90, 30)))
+    }
+
+    func testSelectingSyncsToolbarAndToolbarEditsSelection() {
+        let e = makeEngine()
+        e.setTool(.arrow)
+        e.options.skitchThickness = 4
+        e.skitchColor = Colors.rgb(40, 130, 230)
+        drag(e, IPoint(10, 10), IPoint(80, 10))
+        e.options.skitchThickness = 1
+        e.skitchColor = Annotation.skitchRed
+        // 選択を外してから新しい矢印（細い赤）
+        click(e, IPoint(150, 150))
+        drag(e, IPoint(10, 100), IPoint(80, 100))
+        XCTAssertEqual(e.annotations[1].thickness, 1)
+        // 1 本目を選ぶとツールバーが 1 本目の色・太さになる
+        click(e, IPoint(40, 10))
+        XCTAssertEqual(e.selectedAnnotation, 0)
+        XCTAssertEqual(e.options.skitchThickness, 1, "あとから変えた太さが選択中の部品に効いている")
+        XCTAssertEqual(e.skitchColor, Annotation.skitchRed)
+        // 太さを超極太に
+        e.options.skitchThickness = 5
+        XCTAssertEqual(e.annotations[0].thickness, 5)
+        XCTAssertEqual(e.annotations[1].thickness, 1, "選んでいない部品は変わらない")
+    }
+
+    func testDeleteAndUndoRestoresPart() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(50, 50))
+        XCTAssertEqual(e.selectedAnnotation, 0)
+        e.deleteAnnotation()
+        XCTAssertTrue(e.annotations.isEmpty)
+        e.undo()
+        XCTAssertEqual(e.annotations.count, 1)
+        XCTAssertEqual(e.flattened()[50, 50], StampKind.cross.defaultColor)
+    }
+
+    func testStampClickOnEmptyFirstDeselectsThenPlaces() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(50, 50))
+        click(e, IPoint(150, 150))
+        XCTAssertEqual(e.annotations.count, 1, "選んでいる間の外側クリックは選択を外すだけ")
+        XCTAssertNil(e.selectedAnnotation)
+        click(e, IPoint(150, 150))
+        XCTAssertEqual(e.annotations.count, 2)
+    }
+
+    func testStampDragSizesOnPlacement() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        drag(e, IPoint(50, 50), IPoint(80, 60))
+        XCTAssertEqual(e.annotations[0].shape, .stamp(.cross, center: IPoint(50, 50), radius: 30))
+    }
+
+    func testBoxCreateResizeMove() {
+        let e = makeEngine()
+        e.setTool(.skitchBox)
+        drag(e, IPoint(20, 20), IPoint(80, 60))
+        XCTAssertEqual(e.annotations[0].shape, .box(IRect(x: 20, y: 20, width: 61, height: 41)))
+        let br = SelectionHandle.bottomRight.position(in: IRect(x: 20, y: 20, width: 61, height: 41))
+        XCTAssertEqual(e.annotationPart(at: br), .boxHandle(.bottomRight))
+        e.mouseDown(at: br, button: .primary)
+        e.mouseDragged(to: CanvasPoint(br.x + 20, br.y + 10))
+        e.mouseUp(at: CanvasPoint(br.x + 20, br.y + 10))
+        XCTAssertEqual(e.annotations[0].shape, .box(IRect(x: 20, y: 20, width: 81, height: 51)))
+        XCTAssertNil(e.annotationPart(at: cp(60, 45)), "中は空いている")
+        drag(e, IPoint(20, 30), IPoint(30, 40))
+        XCTAssertEqual(e.annotations[0].shape, .box(IRect(x: 30, y: 30, width: 81, height: 51)))
+        // 中をクリック：選択を外すだけで、小さすぎる四角は置かない
+        click(e, IPoint(60, 50))
+        XCTAssertEqual(e.annotations.count, 1)
+        XCTAssertNil(e.selectedAnnotation)
+    }
+
+    func testBoxShiftMakesSquare() {
+        let e = makeEngine()
+        e.setTool(.skitchBox)
+        drag(e, IPoint(10, 10), IPoint(50, 30), modifiers: .shift)
+        XCTAssertEqual(e.annotations[0].shape, .box(IRect(x: 10, y: 10, width: 41, height: 41)))
+    }
+
+    func testShortArrowIsNotPlacedAndOverShrinkRestores() {
+        let e = makeEngine()
+        e.setTool(.arrow)
+        click(e, IPoint(10, 10))
+        XCTAssertTrue(e.annotations.isEmpty)
+        XCTAssertFalse(e.canUndo, "置かなかったものは履歴に残さない")
+        drag(e, IPoint(10, 10), IPoint(60, 10))
+        drag(e, IPoint(60, 10), IPoint(12, 10))
+        XCTAssertEqual(e.annotations[0].shape, .arrow(tail: IPoint(10, 10), head: IPoint(60, 10)))
+    }
+
+    func testTextCreateAndReEdit() {
+        let e = makeEngine()
+        e.setTool(.skitchText)
+        click(e, IPoint(20, 20))
+        XCTAssertNotNil(e.textBox)
+        XCTAssertTrue(e.textBoxIsSkitch)
+        e.commitSkitchText("こんにちは", measured: ISize(120, 32))
+        XCTAssertEqual(e.annotations.count, 1)
+        guard case .text(let s, let f, let size) = e.annotations[0].shape else { return XCTFail() }
+        XCTAssertEqual(s, "こんにちは")
+        XCTAssertEqual(f.origin, IPoint(20, 20))
+        XCTAssertEqual(f.height, 32)
+        XCTAssertEqual(size, ToolOptions.skitchTextPixels(e.options.skitchTextSize))
+        XCTAssertEqual(e.annotations[0].color, Annotation.skitchRed)
+        XCTAssertEqual(e.canvas[25, 25], Colors.white, "文字も絵には焼き込まない")
+        // 文字ツールでクリックすると打ち直し
+        click(e, IPoint(25, 25))
+        XCTAssertEqual(e.editingAnnotation, 0)
+        XCTAssertEqual(e.textEditInitial, "こんにちは")
+        XCTAssertEqual(e.textBox?.origin, IPoint(20, 20))
+        XCTAssertEqual(e.renderDisplay()[25, 25], Colors.white, "打ち直している間は元の文字を隠す")
+        e.commitSkitchText("こんばんは", measured: ISize(120, 32))
+        guard case .text(let s2, _, _) = e.annotations[0].shape else { return XCTFail() }
+        XCTAssertEqual(s2, "こんばんは")
+        XCTAssertEqual(e.annotations.count, 1)
+        e.undo()
+        guard case .text(let s3, _, _) = e.annotations[0].shape else { return XCTFail() }
+        XCTAssertEqual(s3, "こんにちは")
+    }
+
+    func testDoubleClickEditsTextWithOtherSkitchTool() {
+        let e = makeEngine()
+        e.setTool(.skitchText)
+        click(e, IPoint(20, 20))
+        e.commitSkitchText("文字", measured: ISize(100, 30))
+        e.setTool(.arrow)
+        click(e, IPoint(25, 25))
+        XCTAssertEqual(e.selectedAnnotation, 0)
+        XCTAssertNil(e.editingAnnotation, "1 回目のクリックは選ぶだけ")
+        e.mouseDown(at: cp(25, 25), button: .primary, clickCount: 2)
+        e.mouseUp(at: cp(25, 25))
+        XCTAssertEqual(e.editingAnnotation, 0, "ダブルクリックで打ち直し")
+        XCTAssertTrue(e.textBoxIsSkitch)
+        // 空にして確定すると消える
+        e.commitSkitchText("", measured: ISize(100, 30))
+        XCTAssertTrue(e.annotations.isEmpty)
+    }
+
+    func testTextSizeChangeOnSelectedTextRemeasures() {
+        let e = makeEngine()
+        e.setTool(.skitchText)
+        click(e, IPoint(20, 20))
+        e.commitSkitchText("abc", measured: ISize(100, 30))
+        e.setTool(.arrow)
+        click(e, IPoint(25, 25))
+        e.options.skitchTextSize = 2
+        guard case .text(_, let f, let size) = e.annotations[0].shape else { return XCTFail() }
+        XCTAssertEqual(size, 40)
+        XCTAssertEqual(f.height, 44, "大きさに合わせて測り直す")
+    }
+
+    func testSkitchColorIsIndependentOfPaintColors() {
+        let e = makeEngine()
+        XCTAssertEqual(e.skitchColor, Colors.rgb(235, 69, 110))
+        e.setTool(.arrow)
+        e.mouseDown(at: cp(10, 10), button: .secondary)
         e.mouseDragged(to: cp(60, 10))
         e.mouseUp(at: cp(60, 10))
-        e.mouseDown(at: cp(60, 10), button: .primary)
-        e.mouseDragged(to: cp(12, 10))
-        e.mouseUp(at: cp(12, 10))
-        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(10, 10), head: IPoint(60, 10)), "縮めすぎたら元に戻す")
+        XCTAssertEqual(e.annotations[0].color, Annotation.skitchRed, "右ボタンでも Skitch の色")
+        e.primary = Colors.rgb(0, 0, 255)
+        e.swapColors()
+        XCTAssertEqual(e.annotations[0].color, Annotation.skitchRed)
+        e.skitchColor = Colors.rgb(60, 185, 90)
+        XCTAssertEqual(e.annotations[0].color, Colors.rgb(60, 185, 90), "選んでいる部品は Skitch の色で変わる")
+    }
+
+    func testReclickingSelectedColorRecolorsStamp() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        e.options.stampKind = .check
+        click(e, IPoint(50, 50))
+        // スタンプを選ぶとツールバーはスタンプの色になる。赤をもう一度押すと赤に
+        e.skitchColor = Annotation.skitchRed
+        XCTAssertEqual(e.annotations[0].color, Annotation.skitchRed)
+    }
+
+    func testWholeImageTransformBakesPartsInOneUndo() {
+        let e = makeEngine(100, 50)
+        e.setTool(.stamp)
+        click(e, IPoint(20, 20))
+        e.rotateClockwise()
+        XCTAssertTrue(e.annotations.isEmpty)
+        XCTAssertEqual(e.canvas.size, ISize(50, 100))
+        XCTAssertEqual(e.canvas[50 - 1 - 20, 20], StampKind.cross.defaultColor, "部品ごと回る")
+        e.undo()
+        XCTAssertEqual(e.annotations.count, 1, "1 回の元に戻すで部品も戻る")
+        XCTAssertEqual(e.canvas.size, ISize(100, 50))
+    }
+
+    func testBakeAnnotations() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(50, 50))
+        e.bakeAnnotations()
+        XCTAssertTrue(e.annotations.isEmpty)
+        XCTAssertEqual(e.canvas[50, 50], StampKind.cross.defaultColor)
+        e.undo()
+        XCTAssertEqual(e.annotations.count, 1)
+        XCTAssertEqual(e.canvas[50, 50], Colors.white)
+    }
+
+    func testCropKeepsPartsEditableAndShifted() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(100, 100))
+        e.setTool(.select)
+        drag(e, IPoint(50, 50), IPoint(149, 149))
+        e.cropToSelection()
+        XCTAssertEqual(e.canvas.size, ISize(100, 100))
+        XCTAssertEqual(e.annotations[0].shape, .stamp(.cross, center: IPoint(50, 50), radius: Annotation.defaultStampRadius))
+    }
+
+    func testClearImageRemovesPartsUndoably() {
+        let e = makeEngine()
+        e.setTool(.stamp)
+        click(e, IPoint(50, 50))
+        e.clearImage()
+        XCTAssertTrue(e.annotations.isEmpty)
+        e.undo()
+        XCTAssertEqual(e.annotations.count, 1)
+    }
+
+    func testPartsMarkModifiedAndCountAsNotPristine() {
+        let e = makeEngine()
+        e.load(Bitmap(width: 100, height: 100))
+        XCTAssertFalse(e.isModified)
+        e.setTool(.stamp)
+        click(e, IPoint(50, 50))
+        XCTAssertTrue(e.isModified)
+        e.markSaved()
+        e.setTool(.pencil)
+        XCTAssertFalse(e.isModified, "選択を外すだけでは変更なし")
+        let f = PaintEngine(width: 100, height: 80)
+        f.annotationRenderer = fakeRenderer
+        f.setTool(.stamp)
+        click(f, IPoint(10, 10))
+        f.paste(Bitmap(width: 10, height: 10, fill: Colors.black))
+        XCTAssertEqual(f.canvas.size, ISize(100, 80), "部品があればまっさら扱いではない")
     }
 
     func testArrowHitTestFollowsShape() {
-        let a = Annotation(shape: .arrow(tail: IPoint(0, 50), head: IPoint(200, 50)), color: red, thickness: 2)
+        let a = Annotation(shape: .arrow(tail: IPoint(0, 50), head: IPoint(200, 50)), color: Annotation.skitchRed, thickness: 2)
         XCTAssertEqual(a.part(at: CanvasPoint(100.5, 50.5), tolerance: 5), .body)
-        XCTAssertNil(a.part(at: CanvasPoint(100.5, 64.5), tolerance: 5), "細い軸のすぐ横は新しい矢印を引ける")
-        XCTAssertNil(a.part(at: CanvasPoint(230.5, 50.5), tolerance: 5), "先端の先は当たらない")
-        XCTAssertEqual(a.part(at: CanvasPoint(190.5, 58.5), tolerance: 5), .body, "頭の幅の中は当たる")
-    }
-
-    func testReclickingSelectedSkitchColorRecolorsStamp() {
-        let e = makeEngine(100, 100)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
-        e.setTool(.stamp)
-        e.options.stampKind = .check
-        e.mouseDown(at: cp(50, 50), button: .primary)
-        e.mouseUp(at: cp(50, 50))
-        XCTAssertEqual(e.annotation?.color, StampKind.check.defaultColor)
-        e.skitchColor = Annotation.skitchRed
-        XCTAssertEqual(e.annotation?.color, Annotation.skitchRed, "選んでいる赤をもう一度押すとスタンプも赤に")
+        XCTAssertNil(a.part(at: CanvasPoint(100.5, 64.5), tolerance: 5))
+        XCTAssertNil(a.part(at: CanvasPoint(230.5, 50.5), tolerance: 5))
+        XCTAssertEqual(a.part(at: CanvasPoint(190.5, 58.5), tolerance: 5), .body)
     }
 
     func testThickBoxRimIsGrabbableWhenZoomed() {
-        let e = makeEngine(200, 200)
-        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        let e = makeEngine()
         e.zoom = 8
         e.options.skitchThickness = 3
         e.setTool(.skitchBox)
-        e.mouseDown(at: cp(20, 20), button: .primary)
-        e.mouseDragged(to: cp(120, 120))
-        e.mouseUp(at: cp(120, 120))
-        // 太い枠線（8 ピクセル）の内側寄りの所
+        drag(e, IPoint(20, 20), IPoint(120, 120))
         XCTAssertEqual(e.annotationPart(at: CanvasPoint(27.5, 60.5)), .body)
-        XCTAssertNil(e.annotationPart(at: CanvasPoint(10.5, 60.5)), "描いていない外側はつかめない")
+        XCTAssertNil(e.annotationPart(at: CanvasPoint(10.5, 60.5)))
+    }
+
+    func testHistorySharesUnchangedCanvas() {
+        var h = History(maxCount: 100, maxBytes: 10 * 1024 * 1024)
+        let big = Bitmap(width: 1000, height: 1000)
+        for i in 0..<20 {
+            h.push(DocState(canvas: big, annotations: [Annotation(shape: .stamp(.cross, center: IPoint(i, i), radius: 5),
+                                                                   color: 0, thickness: 0)]))
+        }
+        XCTAssertEqual(h.undoStack.count, 20, "同じ絵を共有していればメモリを 1 枚分しか数えない")
+        XCTAssertFalse(h.droppedOldest)
     }
 }
 

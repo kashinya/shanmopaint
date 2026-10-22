@@ -75,9 +75,15 @@ public struct ToolOptions: Equatable {
     public static let lineWidths = [1, 2, 3, 4, 5]
     public static let airbrushRadii = [4, 8, 12]
     public static let magnifications = [1, 2, 4, 6, 8]
-    public static let skitchThicknesses = [1, 2, 3]
+    /// 矢印・四角の太さ：細・中・太・極太・超極太
+    public static let skitchThicknesses = [1, 2, 3, 4, 5]
     /// Skitch の文字の大きさ（ピクセル）：小・中・大
     public static let skitchTextSizes = [20, 28, 40]
+
+    /// 文字の大きさの番号 → ピクセル
+    public static func skitchTextPixels(_ index: Int) -> Int {
+        skitchTextSizes[min(skitchTextSizes.count - 1, max(0, index))]
+    }
 }
 
 /// ペイントの中身（キャンバス・道具・選択範囲・履歴）。UI に依存しない。
@@ -90,12 +96,14 @@ public final class PaintEngine {
             if selection != nil && options.transparentBackground { emit(.display) }
         }
     }
-    /// Skitch ツールの色（ペイントの描画色とは別）。浮いている注釈があればその色も変える。
+    /// Skitch ツールの色（ペイントの描画色とは別）。選んでいる部品があればその色も変える。
     public var skitchColor: Pixel = Annotation.skitchRed {
         didSet {
             emit(.colors)
-            // 選んでいる色をもう一度クリックしても、色の違うスタンプには効くように（oldValue ではなく注釈の色と比べる）
-            if let a = annotation, a.color != skitchColor { annotation!.color = skitchColor; emit(.display) }
+            guard !syncingFromSelection else { return }
+            // 選んでいる色をもう一度クリックしても、色の違う部品には効くように（oldValue ではなく部品の色と比べる）
+            let c = skitchColor
+            editSelected { $0.color = c }
         }
     }
     public var secondary: Pixel = Colors.white {
@@ -114,17 +122,27 @@ public final class PaintEngine {
                 emit(.display)
                 if selection?.lifted == true { markModified() }
             }
-            if var a = annotation {
-                switch a.shape {
-                case .arrow, .box:
-                    a.thickness = options.skitchThickness
-                case .stamp(_, let c, let r):
-                    if oldValue.stampKind != options.stampKind {
-                        a.shape = .stamp(options.stampKind, center: c, radius: r)
-                        a.color = options.stampKind.defaultColor
+            if !syncingFromSelection {
+                // Skitch ツールバーで変えた太さ・種類・文字の大きさを、選んでいる部品にも反映する
+                let o = options, measure = textMeasurer
+                editSelected { a in
+                    switch a.shape {
+                    case .arrow, .box:
+                        if oldValue.skitchThickness != o.skitchThickness { a.thickness = o.skitchThickness }
+                    case .stamp(_, let c, let r):
+                        if oldValue.stampKind != o.stampKind {
+                            a.shape = .stamp(o.stampKind, center: c, radius: r)
+                            a.color = o.stampKind.defaultColor
+                        }
+                    case .text(let str, let f, _):
+                        if oldValue.skitchTextSize != o.skitchTextSize {
+                            let size = ToolOptions.skitchTextPixels(o.skitchTextSize)
+                            var nf = f
+                            if let m = measure?(str, f.width, size) { nf.height = m.height }
+                            a.shape = .text(str, frame: nf, size: size)
+                        }
                     }
                 }
-                if a != annotation { annotation = a; emit(.display); emit(.selection) }
             }
             emit(.tool)
         }
@@ -151,20 +169,28 @@ public final class PaintEngine {
     public static let maxCanvasSide = 10_000
     /// ドラッグ中の図形・枠の大きさ（ステータスバー用）。
     public private(set) var liveSize: ISize?
-    /// 浮いている注釈（矢印・スタンプ）。
-    public private(set) var annotation: Annotation? {
-        didSet {
-            guard annotation != oldValue else { return }
-            renderedAnnotation = nil
-            // 浮いている注釈も作品の一部：閉じるときに保存を確認する
-            if annotation != nil { markModified() }
-        }
+    /// Skitch の部品（ペイントの絵の上に乗っていて、Skitch の道具であとから選び直せる）。
+    public private(set) var annotations: [Annotation] = []
+    /// 選んでいる部品の番号。
+    public private(set) var selectedAnnotation: Int?
+    /// 文字を打ち直している部品の番号（打ち直している間は表示しない）。
+    public private(set) var editingAnnotation: Int?
+    /// 打ち直すときに入力欄へ入れておく文字。
+    public private(set) var textEditInitial = ""
+    /// 選んでいる部品。
+    public var annotation: Annotation? {
+        guard let i = selectedAnnotation, annotations.indices.contains(i) else { return nil }
+        return annotations[i]
     }
-    /// 注釈を画像にする関数（UI が CoreGraphics で描く）。2 つめの引数はキャンバスの範囲で、これより外は描かなくてよい。
-    /// nil なら注釈は表示も確定もされない。
+    /// 今の入力枠が Skitch の文字か（新しく打つ・打ち直す）。false ならペイントのテキスト。
+    public var textBoxIsSkitch: Bool { tool == .skitchText || editingAnnotation != nil }
+    /// 部品を画像にする関数（UI が CoreGraphics で描く）。2 つめの引数はキャンバスの範囲で、これより外は描かなくてよい。
+    /// nil なら部品は表示も書き出しもされない。
     public var annotationRenderer: ((Annotation, IRect) -> RenderedAnnotation?)? {
-        didSet { renderedAnnotation = nil }
+        didSet { renderCache.removeAll() }
     }
+    /// Skitch の文字の大きさを測る関数（UI が用意する）。(文字, 折り返し幅, 文字の大きさ) → 大きさ
+    public var textMeasurer: ((String, Int, Int) -> ISize)?
 
     public var listener: ((EngineEvent) -> Void)?
     public var rng = SplitMix64(seed: UInt64.random(in: 0...UInt64.max))
@@ -174,7 +200,10 @@ public final class PaintEngine {
     private var overlay: ((inout Bitmap) -> Void)?
     private var polygon: PolygonState?
     private var curve: CurveState?
-    private var renderedAnnotation: RenderedAnnotation?
+    private var renderCache: [Annotation: RenderedAnnotation] = [:]
+    private var renderCacheCanvasSize = ISize(0, 0)
+    /// 選んだ部品の色・太さを Skitch ツールバーに映している最中（部品へ書き戻さない）
+    private var syncingFromSelection = false
 
     private enum Drag {
         case stroke(button: MouseButton, last: IPoint)
@@ -188,9 +217,10 @@ public final class PaintEngine {
         case text(start: IPoint)
         case polygonSegment
         case curvePoint
-        case annotation(part: Annotation.Part, start: CanvasPoint, original: Annotation, isNew: Bool)
-        case boxCreate(start: IPoint)
-        case stampPlace(center: IPoint)
+        case annotation(index: Int, part: Annotation.Part, start: CanvasPoint, original: Annotation, isNew: Bool,
+                        before: [Annotation])
+        case boxCreate(index: Int, start: IPoint, before: [Annotation])
+        case stampPlace(index: Int, center: IPoint, before: [Annotation])
     }
 
     private struct PolygonState {
@@ -215,8 +245,8 @@ public final class PaintEngine {
 
     // MARK: - 状態
 
-    public var canUndo: Bool { history.canUndo || selection?.recorded == true || annotation != nil }
-    public var canRedo: Bool { history.canRedo && annotation == nil }
+    public var canUndo: Bool { history.canUndo || selection?.recorded == true }
+    public var canRedo: Bool { history.canRedo }
     public var hasSelection: Bool { selection != nil }
     public var isAirbrushing: Bool {
         if case .airbrush? = drag { return true }
@@ -224,15 +254,14 @@ public final class PaintEngine {
     }
     public var isDragging: Bool { drag != nil }
     /// 多角形・曲線を描いている途中か。
-    public var hasPendingShape: Bool { polygon != nil || curve != nil || annotation != nil }
+    public var hasPendingShape: Bool { polygon != nil || curve != nil }
 
     /// 保存・印刷用：浮いている選択範囲や注釈を重ねた画像（状態は変えない）。
     public func flattened() -> Bitmap {
-        let ann = annotation.flatMap { renderAnnotation($0) }
-        if !(selection?.lifted ?? false) && ann == nil { return canvas }
+        if !(selection?.lifted ?? false) && annotations.isEmpty { return canvas }
         var out = canvas
         if let sel = selection, sel.lifted { composite(sel, onto: &out) }
-        if let r = ann { out.drawPremultiplied(r.image, at: r.origin) }
+        drawAnnotations(onto: &out, skipping: nil)
         return out
     }
 
@@ -245,11 +274,10 @@ public final class PaintEngine {
 
     /// 画面に出す画像（浮いている選択範囲やドラッグ中の図形を重ねたもの）。
     public func renderDisplay() -> Bitmap {
-        let ann = annotation.flatMap { renderAnnotation($0) }
-        if overlay == nil && !(selection?.lifted ?? false) && ann == nil { return canvas }
+        if overlay == nil && !(selection?.lifted ?? false) && annotations.isEmpty { return canvas }
         var out = canvas
         if let sel = selection, sel.lifted { composite(sel, onto: &out) }
-        if let r = ann { out.drawPremultiplied(r.image, at: r.origin) }
+        drawAnnotations(onto: &out, skipping: editingAnnotation)
         overlay?(&out)
         return out
     }
@@ -260,7 +288,11 @@ public final class PaintEngine {
         guard t != tool else { return }
         finalizePending()
         if t == .picker { previousTool = tool }
-        if textBox != nil { textBox = nil; emit(.textBox) }
+        if textBox != nil {
+            textBox = nil
+            editingAnnotation = nil
+            emit(.textBox)
+        }
         tool = t
         emit(.tool)
         emit(.display)
@@ -304,7 +336,7 @@ public final class PaintEngine {
                 setLassoOverlay([s])
             }
         case .eraser:
-            history.push(canvas)
+            pushHistory()
             if button == .primary {
                 strokeSegment(from: p, to: p, color: secondary)
                 drag = .stroke(button: .primary, last: p)
@@ -316,7 +348,7 @@ public final class PaintEngine {
         case .fill:
             let before = canvas
             if Raster.floodFill(&canvas, x: p.x, y: p.y, color: fg) != nil {
-                history.push(before)
+                pushHistory(before)
                 changed()
             }
         case .picker:
@@ -327,16 +359,16 @@ public final class PaintEngine {
             let target = options.magnification > 1 ? options.magnification : 4
             emit(.magnify(level: zoom > 1 ? 1 : target, center: p))
         case .pencil, .brush:
-            history.push(canvas)
+            pushHistory()
             strokeSegment(from: p, to: p, color: fg)
             drag = .stroke(button: button, last: p)
             changed()
         case .airbrush:
-            history.push(canvas)
+            pushHistory()
             spray(at: p, color: fg)
             drag = .airbrush(button: button, at: p)
             changed()
-        case .text, .skitchText:
+        case .text:
             // キャンバスの外（灰色の所）には枠を作らない
             guard textBox == nil, canvas.contains(p.x, p.y) else { return }
             drag = .text(start: p)
@@ -365,33 +397,65 @@ public final class PaintEngine {
             }
             drag = .curvePoint
             updateCurveOverlay()
-        case .arrow, .skitchBox, .stamp:
-            if let a = annotation {
-                if let part = annotationPart(at: cp) {
-                    drag = .annotation(part: part, start: cp, original: a, isNew: false)
-                    emit(.selection)
-                    return
-                }
-                commitAnnotation()
-                // スタンプは外側のクリックで確定するだけ（次のスタンプはもう一度クリック）
-                if tool == .stamp { return }
-            }
-            if tool == .arrow {
-                let a = Annotation(shape: .arrow(tail: p, head: p), color: skitchColor, thickness: options.skitchThickness)
-                annotation = a
-                drag = .annotation(part: .head, start: cp, original: a, isNew: true)
-            } else if tool == .skitchBox {
-                annotation = Annotation(shape: .box(IRect.spanning(p, p)), color: skitchColor, thickness: options.skitchThickness)
-                drag = .boxCreate(start: p)
-            } else {
-                let k = options.stampKind
-                annotation = Annotation(shape: .stamp(k, center: p, radius: Annotation.defaultStampRadius),
-                                        color: k.defaultColor, thickness: 0)
-                drag = .stampPlace(center: p)
-            }
-            emit(.selection)
-            emit(.display)
+        case .arrow, .skitchBox, .stamp, .skitchText:
+            mouseDownSkitch(at: cp, clickCount: clickCount)
         }
+    }
+
+    /// Skitch の道具でのクリック：置いてある部品を選ぶ・つまむ・文字を打ち直す、何もない所なら新しく置く。
+    private func mouseDownSkitch(at cp: CanvasPoint, clickCount: Int) {
+        let p = cp.pixel
+        guard textBox == nil else { return }
+        let tol = annotationTolerance
+        // 選んでいる部品のつまみ・本体
+        var hit: (Int, Annotation.Part)?
+        if let i = selectedAnnotation, annotations.indices.contains(i), let part = annotations[i].part(at: cp, tolerance: tol) {
+            hit = (i, part)
+        } else if let i = topAnnotation(at: cp), let part = annotations[i].part(at: cp, tolerance: tol) {
+            hit = (i, part)
+        }
+        if let (i, part) = hit {
+            selectAnnotation(i)
+            // 文字はダブルクリック（Skitch の文字ツールならクリック）で打ち直す
+            if annotations[i].isText && (clickCount >= 2 || tool == .skitchText) {
+                beginEditingText(i)
+                return
+            }
+            drag = .annotation(index: i, part: part, start: cp, original: annotations[i], isNew: false, before: annotations)
+            emit(.selection)
+            return
+        }
+        // 何もない所：選んでいた部品があれば外すだけ（スタンプ・文字は次のクリックで置く）
+        if selectedAnnotation != nil {
+            selectAnnotation(nil)
+            if tool == .stamp || tool == .skitchText { return }
+        }
+        let before = annotations
+        switch tool {
+        case .arrow:
+            let a = Annotation(shape: .arrow(tail: p, head: p), color: skitchColor, thickness: options.skitchThickness)
+            annotations.append(a)
+            selectedAnnotation = annotations.count - 1
+            drag = .annotation(index: annotations.count - 1, part: .head, start: cp, original: a, isNew: true, before: before)
+        case .skitchBox:
+            annotations.append(Annotation(shape: .box(IRect.spanning(p, p)), color: skitchColor, thickness: options.skitchThickness))
+            selectedAnnotation = annotations.count - 1
+            drag = .boxCreate(index: annotations.count - 1, start: p, before: before)
+        case .stamp:
+            let k = options.stampKind
+            annotations.append(Annotation(shape: .stamp(k, center: p, radius: Annotation.defaultStampRadius),
+                                          color: k.defaultColor, thickness: 0))
+            selectedAnnotation = annotations.count - 1
+            drag = .stampPlace(index: annotations.count - 1, center: p, before: before)
+        case .skitchText:
+            guard canvas.contains(p.x, p.y) else { return }
+            drag = .text(start: p)
+            marquee = IRect.spanning(p, p)
+        default:
+            return
+        }
+        emit(.selection)
+        emit(.display)
     }
 
     public func mouseDragged(to cp: CanvasPoint, modifiers: Modifiers = []) {
@@ -468,25 +532,24 @@ public final class PaintEngine {
             }
             curve = c
             updateCurveOverlay()
-        case .annotation(let part, let start, let original, _):
+        case .annotation(let i, let part, let start, let original, _, _):
+            guard annotations.indices.contains(i) else { return }
             let dx = Int((cp.x - start.x).rounded()), dy = Int((cp.y - start.y).rounded())
-            annotation = original.adjusted(part, dx: dx, dy: dy, pointer: p, constrain: shift)
+            annotations[i] = original.adjusted(part, dx: dx, dy: dy, pointer: p, constrain: shift)
             emit(.selection)
             emit(.display)
-        case .boxCreate(let s):
-            guard var a = annotation else { return }
+        case .boxCreate(let i, let s, _):
+            guard annotations.indices.contains(i) else { return }
             let e = shift ? Raster.constrainSquare(from: s, to: p) : p
-            a.shape = .box(IRect.spanning(s, e))
-            annotation = a
+            annotations[i].shape = .box(IRect.spanning(s, e))
             liveSize = IRect.spanning(s, e).size
             emit(.selection)
             emit(.display)
-        case .stampPlace(let c):
-            guard var a = annotation, case .stamp(let k, _, _) = a.shape else { return }
+        case .stampPlace(let i, let c, _):
+            guard annotations.indices.contains(i), case .stamp(let k, _, _) = annotations[i].shape else { return }
             let d = max(abs(p.x - c.x), abs(p.y - c.y))
             if d > 6 {
-                a.shape = .stamp(k, center: c, radius: max(Annotation.minStampRadius, d))
-                annotation = a
+                annotations[i].shape = .stamp(k, center: c, radius: max(Annotation.minStampRadius, d))
                 emit(.selection)
                 emit(.display)
             }
@@ -506,7 +569,7 @@ public final class PaintEngine {
             break
         case .shape(let button, let s, let e):
             overlay = nil
-            history.push(canvas)
+            pushHistory()
             PaintEngine.drawShapeTool(&canvas, tool: tool, options: options, colors: colors(for: button), from: s, to: e)
             changed()
         case .marquee:
@@ -570,22 +633,30 @@ public final class PaintEngine {
             default:
                 commitCurve()
             }
-        case .annotation(_, _, let original, let isNew):
-            if let a = annotation, a.isTooSmall {
+        case .annotation(let i, _, _, let original, let isNew, let before):
+            if annotations.indices.contains(i), annotations[i].isTooSmall {
                 // 新しく引こうとしてほとんど動かさなかった矢印は置かない。置いてある矢印・四角を縮めすぎたら元に戻す
-                annotation = isNew ? nil : original
-                emit(.display)
+                if isNew {
+                    annotations.remove(at: i)
+                    selectedAnnotation = nil
+                } else {
+                    annotations[i] = original
+                }
             }
+            recordAnnotations(before)
             emit(.selection)
-        case .boxCreate:
+            emit(.display)
+        case .boxCreate(let i, _, let before):
             // クリックしただけ・小さすぎる四角は置かない
-            if let a = annotation, case .box(let r) = a.shape,
-               r.width < Annotation.minBoxSide || r.height < Annotation.minBoxSide {
-                annotation = nil
-                emit(.display)
+            if annotations.indices.contains(i), annotations[i].isTooSmall {
+                annotations.remove(at: i)
+                selectedAnnotation = nil
             }
+            recordAnnotations(before)
             emit(.selection)
-        case .stampPlace:
+            emit(.display)
+        case .stampPlace(_, _, let before):
+            recordAnnotations(before)
             emit(.selection)
         }
     }
@@ -611,53 +682,160 @@ public final class PaintEngine {
         return nil
     }
 
-    /// 浮いている注釈のどこに当たるか（cp はキャンバス座標）。
+    // MARK: - Skitch の部品
+
+    private var annotationTolerance: Double { max(5.0 / zoom, 1.0) }
+
+    /// 部品のどこに当たるか（Skitch の道具のとき。cp はキャンバス座標）。選んでいる部品を優先する。
     public func annotationPart(at cp: CanvasPoint) -> Annotation.Part? {
-        guard let a = annotation, tool.placesAnnotation else { return nil }
-        return a.part(at: cp, tolerance: max(5.0 / zoom, 1.0))
+        guard tool.isSkitch else { return nil }
+        let tol = annotationTolerance
+        if let i = selectedAnnotation, annotations.indices.contains(i), let p = annotations[i].part(at: cp, tolerance: tol) {
+            return p
+        }
+        if let i = topAnnotation(at: cp) { return annotations[i].part(at: cp, tolerance: tol) }
+        return nil
     }
 
-    /// 浮いている注釈をキャンバスに焼き込む。
-    /// 変更済みの印は置いた・動かした時点で付けているので、ここでは付けない（保存直後の確定で「変更あり」にしない）。
-    public func commitAnnotation() {
-        guard let a = annotation else { return }
-        annotation = nil
-        if let r = renderAnnotation(a) {
-            history.push(canvas)
-            canvas.drawPremultiplied(r.image, at: r.origin)
-            isPristine = false
+    /// cp にあるいちばん上の部品。
+    private func topAnnotation(at cp: CanvasPoint) -> Int? {
+        let tol = annotationTolerance
+        for i in annotations.indices.reversed() where i != editingAnnotation {
+            if annotations[i].part(at: cp, tolerance: tol) != nil { return i }
+        }
+        return nil
+    }
+
+    /// 部品を選ぶ（nil で選択を外す）。選んだ部品の色・太さなどを Skitch ツールバーに映す。
+    private func selectAnnotation(_ i: Int?) {
+        guard selectedAnnotation != i else { return }
+        selectedAnnotation = i
+        if let i = i, annotations.indices.contains(i) {
+            let a = annotations[i]
+            syncingFromSelection = true
+            skitchColor = a.color
+            var o = options
+            switch a.shape {
+            case .arrow, .box: o.skitchThickness = a.thickness
+            case .stamp(let k, _, _): o.stampKind = k
+            case .text(_, _, let size):
+                if let idx = ToolOptions.skitchTextSizes.firstIndex(of: size) { o.skitchTextSize = idx }
+            }
+            options = o
+            syncingFromSelection = false
         }
         emit(.selection)
         emit(.display)
-        emit(.history)
     }
 
-    /// 浮いている注釈を消す（delete キー）。元に戻すと消す直前の見た目に戻る。
+    /// 選んでいる部品の選択を外す（部品はそのまま残る）。
+    public func deselectAnnotation() {
+        selectAnnotation(nil)
+    }
+
+    /// 選んでいる部品を書き換える（変わったら元に戻せるように記録する）。
+    private func editSelected(_ f: (inout Annotation) -> Void) {
+        guard let i = selectedAnnotation, annotations.indices.contains(i) else { return }
+        var a = annotations[i]
+        f(&a)
+        guard a != annotations[i] else { return }
+        let before = annotations
+        annotations[i] = a
+        recordAnnotations(before)
+    }
+
+    /// 部品の変更を元に戻せるように記録する（変わっていなければ何もしない）。
+    private func recordAnnotations(_ before: [Annotation]) {
+        guard annotations != before else { return }
+        pushHistory(annotations: before)
+        changed()
+        emit(.selection)
+    }
+
+    /// 選んでいる部品を消す（delete キー）。
     public func deleteAnnotation() {
-        guard let a = annotation else { return }
-        annotation = nil
-        if let r = renderAnnotation(a) {
-            var before = canvas
-            before.drawPremultiplied(r.image, at: r.origin)
-            history.push(before)
-            changed()
-        }
-        emit(.selection)
-        emit(.display)
+        guard let i = selectedAnnotation, annotations.indices.contains(i) else { return }
+        let before = annotations
+        annotations.remove(at: i)
+        selectedAnnotation = nil
+        recordAnnotations(before)
     }
 
     public func nudgeAnnotation(dx: Int, dy: Int) {
-        guard let a = annotation else { return }
-        annotation = a.moved(dx: dx, dy: dy)
-        emit(.selection)
-        emit(.display)
+        editSelected { $0 = $0.moved(dx: dx, dy: dy) }
     }
 
-    private func renderAnnotation(_ a: Annotation) -> RenderedAnnotation? {
-        if a == annotation, let r = renderedAnnotation { return r }
-        let r = annotationRenderer?(a, canvas.bounds)
-        if a == annotation { renderedAnnotation = r }
+    /// 部品を全部ペイントの絵に焼き込む（このあとは選び直せない）。
+    public func bakeAnnotations() {
+        guard !annotations.isEmpty else { return }
+        finalizePending()
+        pushHistory()
+        var c = canvas
+        drawAnnotations(onto: &c, skipping: nil)
+        canvas = c
+        annotations = []
+        selectedAnnotation = nil
+        changed()
+        emit(.selection)
+    }
+
+    private func drawAnnotations(onto out: inout Bitmap, skipping: Int?) {
+        for (i, a) in annotations.enumerated() where i != skipping {
+            if let r = rendered(a) { out.drawPremultiplied(r.image, at: r.origin) }
+        }
+    }
+
+    private func rendered(_ a: Annotation) -> RenderedAnnotation? {
+        if renderCacheCanvasSize != canvas.size {
+            renderCache.removeAll()
+            renderCacheCanvasSize = canvas.size
+        }
+        if let r = renderCache[a] { return r }
+        guard let r = annotationRenderer?(a, canvas.bounds) else { return nil }
+        if renderCache.count > annotations.count + 16 {
+            let live = Set(annotations)
+            renderCache = renderCache.filter { live.contains($0.key) }
+        }
+        renderCache[a] = r
         return r
+    }
+
+    /// 置いてある文字を打ち直す。
+    private func beginEditingText(_ i: Int) {
+        guard annotations.indices.contains(i), case .text(let str, let frame, _) = annotations[i].shape else { return }
+        selectAnnotation(i)
+        editingAnnotation = i
+        textEditInitial = str
+        textBox = frame
+        emit(.textBox)
+        emit(.display)
+        emit(.selection)
+    }
+
+    /// Skitch の文字を確定する（新しく打った文字は部品として置き、打ち直した文字は書き換える）。
+    /// measured は折り返したあとの文字の大きさ。空なら、打ち直していた部品は消す。
+    public func commitSkitchText(_ text: String, measured: ISize) {
+        guard let box = textBox else { return }
+        let before = annotations
+        textBox = nil
+        let size = ToolOptions.skitchTextPixels(options.skitchTextSize)
+        let frame = IRect(x: box.x, y: box.y, width: box.width, height: max(1, measured.height))
+        if let i = editingAnnotation, annotations.indices.contains(i) {
+            if text.isEmpty {
+                annotations.remove(at: i)
+            } else {
+                annotations[i].shape = .text(text, frame: frame, size: size)
+            }
+        } else if !text.isEmpty {
+            annotations.append(Annotation(shape: .text(text, frame: frame, size: size), color: skitchColor, thickness: 0))
+        }
+        editingAnnotation = nil
+        textEditInitial = ""
+        selectedAnnotation = nil
+        recordAnnotations(before)
+        emit(.textBox)
+        emit(.display)
+        emit(.selection)
     }
 
     // MARK: - 選択範囲とクリップボード
@@ -702,13 +880,13 @@ public final class PaintEngine {
     public func deleteSelection() {
         guard let sel = selection else { return }
         if !sel.lifted {
-            if !sel.recorded { history.push(canvas) }
+            if !sel.recorded { pushHistory() }
             erase(sel.frame, mask: sel.mask)
         } else {
             // 浮いている画像を消す：消す直前の見た目に戻れるようにする
             var before = canvas
             composite(sel, onto: &before)
-            history.push(before)
+            pushHistory(before)
         }
         selection = nil
         changed()
@@ -732,10 +910,13 @@ public final class PaintEngine {
     /// 選択範囲の大きさにキャンバスを切り抜く。
     public func cropToSelection() {
         guard let sel = selection else { return }
-        let img = clipboardImage(sel)
+        let img = paintImage(sel)
         commitSelection()
-        history.push(canvas)
+        pushHistory()
         canvas = img
+        // Skitch の部品は選び直せるまま、切り抜いた位置に合わせてずらす
+        annotations = annotations.map { $0.moved(dx: -sel.frame.x, dy: -sel.frame.y) }
+        selectedAnnotation = nil
         changed()
         emit(.canvasSize)
     }
@@ -753,7 +934,7 @@ public final class PaintEngine {
         let frame = IRect(origin: plan.origin, size: image.size)
         if isPristine && fitCanvasToPasteWhenPristine && plan.origin == IPoint(0, 0) && plan.canvas == image.size {
             // まっさらなキャンバスを画像に合わせた：浮かせるとドラッグで画像ごと動いてしまうので、すぐ確定する
-            history.push(canvas)
+            pushHistory()
             var img = image
             img.makeOpaque()
             let resized = img.size != canvas.size
@@ -784,13 +965,14 @@ public final class PaintEngine {
         }
         finalizePending()
         if shift != IPoint(0, 0) {
-            history.push(canvas)
+            pushHistory()
             var grown = Bitmap(width: size.width, height: size.height, fill: secondary)
             grown.draw(canvas, at: shift)
             canvas = grown
+            annotations = annotations.map { $0.moved(dx: shift.x, dy: shift.y) }
             emit(.canvasSize)
             frame = frame.offsetBy(dx: shift.x, dy: shift.y)
-            placePaste(image, canvasSize: size, origin: frame.origin, pushHistory: false)
+            placePaste(image, canvasSize: size, origin: frame.origin, recordHistory: false)
         } else {
             placePaste(image, canvasSize: size, origin: frame.origin)
         }
@@ -800,17 +982,19 @@ public final class PaintEngine {
     /// 画像そのものを新しいキャンバスにする（キャンバスは画像と同じ大きさ）。
     public func pasteAsNewImage(_ image: Bitmap) {
         finalizePending()
-        history.push(canvas)
+        pushHistory()
         var img = image
         img.makeOpaque()
         let resized = img.size != canvas.size
         canvas = img
+        annotations = []
+        selectedAnnotation = nil
         changed()
         if resized { emit(.canvasSize) }
     }
 
-    private func placePaste(_ image: Bitmap, canvasSize: ISize, origin: IPoint, pushHistory: Bool = true) {
-        if pushHistory { history.push(canvas) }
+    private func placePaste(_ image: Bitmap, canvasSize: ISize, origin: IPoint, recordHistory: Bool = true) {
+        if recordHistory { pushHistory() }
         if canvasSize != canvas.size {
             canvas = canvas.resizingCanvas(to: canvasSize, fill: secondary)
             emit(.canvasSize)
@@ -855,16 +1039,19 @@ public final class PaintEngine {
         guard s.width > 0, s.height > 0 else { return }
         finalizePending()
         guard s != canvas.size else { return }
-        history.push(canvas)
+        pushHistory()
         canvas = canvas.resizingCanvas(to: s, fill: secondary)
         changed()
         emit(.canvasSize)
     }
 
+    /// イメージのクリア（Skitch の部品も消す）。
     public func clearImage() {
         finalizePending()
-        history.push(canvas)
+        pushHistory()
         canvas.fill(canvas.bounds, with: secondary)
+        annotations = []
+        selectedAnnotation = nil
         changed()
     }
 
@@ -875,7 +1062,9 @@ public final class PaintEngine {
         polygon = nil
         curve = nil
         selection = nil
-        annotation = nil
+        annotations = []
+        selectedAnnotation = nil
+        editingAnnotation = nil
         marquee = nil
         textBox = nil
         history.reset()
@@ -910,7 +1099,7 @@ public final class PaintEngine {
     public func commitText(_ rendered: Bitmap, at origin: IPoint, background: IRect? = nil) {
         let fill = !options.transparentBackground && tool != .skitchText
         textBox = nil
-        history.push(canvas)
+        pushHistory()
         if fill {
             canvas.fill(background ?? IRect(origin: origin, size: rendered.size), with: secondary)
         }
@@ -922,7 +1111,10 @@ public final class PaintEngine {
     public func cancelText() {
         guard textBox != nil else { return }
         textBox = nil
+        editingAnnotation = nil
+        textEditInitial = ""
         emit(.textBox)
+        emit(.display)
     }
 
     /// 入力に合わせて枠を広げたいときなど。キャンバスからはみ出す分は上へずらす。
@@ -947,27 +1139,23 @@ public final class PaintEngine {
     // MARK: - 元に戻す
 
     public func undo() {
-        if annotation != nil {
-            // 置いたばかりの注釈を取り消す
-            annotation = nil
-            drag = nil
-            emit(.selection)
-            emit(.display)
-            return
-        }
         polygon = nil
         curve = nil
         overlay = nil
         drag = nil
         marquee = nil
-        if textBox != nil { textBox = nil; emit(.textBox) }
+        if textBox != nil {
+            textBox = nil
+            editingAnnotation = nil
+            emit(.textBox)
+        }
         var current = canvas
         if let sel = selection {
             selection = nil
             if sel.lifted { composite(sel, onto: &current) }
             emit(.selection)
         }
-        guard let prev = history.undo(current: current) else {
+        guard let prev = history.undo(current: DocState(canvas: current, annotations: annotations)) else {
             emit(.display)
             emit(.history)
             return
@@ -978,18 +1166,21 @@ public final class PaintEngine {
     }
 
     public func redo() {
-        guard annotation == nil else { return }
         commitSelection()
         polygon = nil
         curve = nil
         overlay = nil
-        guard let next = history.redo(current: canvas) else { return }
+        guard let next = history.redo(current: DocState(canvas: canvas, annotations: annotations)) else { return }
         apply(historyState: next)
     }
 
-    private func apply(historyState b: Bitmap) {
-        let resized = b.size != canvas.size
-        canvas = b
+    private func apply(historyState s: DocState) {
+        let resized = s.canvas.size != canvas.size
+        canvas = s.canvas
+        annotations = s.annotations
+        selectedAnnotation = nil
+        editingAnnotation = nil
+        emit(.selection)
         isModified = true
         isPristine = false
         if resized { emit(.canvasSize) }
@@ -1003,6 +1194,11 @@ public final class PaintEngine {
 
     private func emitAll() {
         for e in [EngineEvent.canvasSize, .display, .selection, .textBox, .history, .tool, .colors] { emit(e) }
+    }
+
+    /// 今の状態（絵と部品）を元に戻す履歴に積む。
+    private func pushHistory(_ c: Bitmap? = nil, annotations a: [Annotation]? = nil) {
+        history.push(DocState(canvas: c ?? canvas, annotations: a ?? annotations))
     }
 
     private func markModified() {
@@ -1036,7 +1232,7 @@ public final class PaintEngine {
         drag = nil
         marquee = nil
         liveSize = nil
-        commitAnnotation()
+        selectAnnotation(nil)
         commitSelection()
         if polygon != nil { closePolygon() }
         if curve != nil { commitCurve() }
@@ -1070,7 +1266,7 @@ public final class PaintEngine {
     private func lift(copy: Bool) {
         guard var sel = selection else { return }
         if !sel.recorded {
-            history.push(canvas)
+            pushHistory()
             sel.recorded = true
             emit(.history)
         }
@@ -1104,7 +1300,18 @@ public final class PaintEngine {
         bmp.draw(sel.rendered, at: sel.frame.origin, transparentKey: key, mask: sel.renderedMask)
     }
 
+    /// コピーする画像。まだ動かしていない選択範囲は、見えているとおり（Skitch の部品も重ねて）切り出す。
     private func clipboardImage(_ sel: FloatingSelection) -> Bitmap {
+        guard !sel.lifted, !annotations.isEmpty else { return paintImage(sel) }
+        var img = flattened().cropped(to: sel.frame, outside: secondary)
+        if let m = sel.renderedMask {
+            for i in img.pixels.indices where !m[i] { img.pixels[i] = secondary }
+        }
+        return img
+    }
+
+    /// 選択範囲のペイントの絵だけ。
+    private func paintImage(_ sel: FloatingSelection) -> Bitmap {
         var img = sel.rendered
         if let m = sel.renderedMask {
             for i in img.pixels.indices where !m[i] { img.pixels[i] = secondary }
@@ -1113,7 +1320,7 @@ public final class PaintEngine {
     }
 
     private func transform(geometric: Bool, _ f: (Bitmap) -> Bitmap) {
-        commitAnnotation()
+        selectAnnotation(nil)
         if polygon != nil { closePolygon() }
         if curve != nil { commitCurve() }
         if selection != nil {
@@ -1136,8 +1343,12 @@ public final class PaintEngine {
             emit(.selection)
             emit(.display)
         } else {
-            history.push(canvas)
-            let n = f(canvas)
+            // 画像全体を変えるときは、Skitch の部品も絵に焼き込んでから一緒に変える（1 回の元に戻すで戻る）
+            pushHistory()
+            var base = canvas
+            drawAnnotations(onto: &base, skipping: nil)
+            annotations = []
+            let n = f(base)
             let resized = n.size != canvas.size
             canvas = n
             changed()
@@ -1229,7 +1440,7 @@ public final class PaintEngine {
         var pts = poly.points
         if pts.count >= 4, isNear(pts[pts.count - 1], pts[0]) { pts.removeLast() }
         guard pts.count >= 2 else { emit(.display); return }
-        history.push(canvas)
+        pushHistory()
         PaintEngine.drawPolygon(&canvas, pts, closed: true, options: options, colors: colors(for: poly.button))
         changed()
     }
@@ -1255,7 +1466,7 @@ public final class PaintEngine {
         overlay = nil
         if c.p0 == c.p3 && c.stage == 0 { emit(.display); return }
         let pts = PaintEngine.curvePoints(p0: c.p0, p3: c.p3, c1: c.c1, c2: c.c2, stage: c.stage)
-        history.push(canvas)
+        pushHistory()
         Raster.polyline(&canvas, pts, closed: false, width: options.lineWidth, color: colors(for: c.button).0)
         changed()
     }

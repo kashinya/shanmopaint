@@ -62,7 +62,7 @@ final class SkitchBarView: NSView {
         separator()
         switch e.tool {
         case .arrow, .skitchBox:
-            for t in ToolOptions.skitchThicknesses { add(.thickness(t), w: 30, h: 24) }
+            for t in ToolOptions.skitchThicknesses { add(.thickness(t), w: 28, h: 26) }
         case .skitchText:
             for i in ToolOptions.skitchTextSizes.indices { add(.textSize(i), w: 28, h: 24) }
         case .stamp:
@@ -122,7 +122,8 @@ final class SkitchBarView: NSView {
             case .thickness(let t):
                 let on = e.options.skitchThickness == t
                 if on { Win98.dither(r); Win98.draw(.pressed, in: r) } else { Win98.draw(.raised, in: r) }
-                let w = CGFloat([0, 2, 4, 7][min(3, max(0, t))])
+                // 細・中・太・極太・超極太
+                let w = CGFloat([0, 2, 4, 6, 10, 14][min(5, max(0, t))])
                 ink.setFill()
                 NSBezierPath(roundedRect: NSRect(x: r.minX + 6, y: r.midY - w / 2, width: r.width - 12, height: w),
                              xRadius: w / 2, yRadius: w / 2).fill()
@@ -202,7 +203,7 @@ final class SkitchBarView: NSView {
         switch it.kind {
         case .tool(let t): onHover?(ToolInfo.name(t) + ": " + ToolInfo.hint(t))
         case .color(let c): onHover?("Skitch の色 \(Colors.hexString(c))（ペイントの描画色とは別）")
-        case .thickness(let t): onHover?("矢印・四角の太さ \(t)")
+        case .thickness(let t): onHover?("矢印・四角の太さ：\(["", "細", "中", "太", "極太", "超極太"][min(5, max(0, t))])")
         case .textSize(let i): onHover?("文字の大きさ \(ToolOptions.skitchTextSizes[i]) ピクセル")
         case .stamp(let k): onHover?("スタンプ \(k.label)")
         }

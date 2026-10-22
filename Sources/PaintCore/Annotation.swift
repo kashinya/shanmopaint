@@ -1,10 +1,13 @@
-/// Skitch 風の注釈（矢印・スタンプ）。置いた直後は浮いていて、つまんで直せる。確定するとキャンバスに焼き込む。
-public struct Annotation: Equatable {
-    public enum Shape: Equatable {
+/// Skitch の部品（矢印・文字・四角・スタンプ）。ペイントの絵の上に乗っていて、あとから選び直して直せる。
+/// 保存・コピーのときに絵と重ねて書き出す。
+public struct Annotation: Hashable {
+    public enum Shape: Hashable {
         case arrow(tail: IPoint, head: IPoint)
         /// 角の丸い太枠の四角
         case box(IRect)
         case stamp(StampKind, center: IPoint, radius: Int)
+        /// 文字。frame は左上と折り返しの幅（高さは描いたときの大きさ）、size は文字の大きさ（ピクセル）
+        case text(String, frame: IRect, size: Int)
     }
 
     /// Skitch の「ビビッとな赤」（矢印・四角・文字の既定色）
@@ -17,7 +20,7 @@ public struct Annotation: Equatable {
 
     public var shape: Shape
     public var color: Pixel
-    /// 矢印の太さ（1〜3）。
+    /// 矢印・四角の太さ（1〜5）。
     public var thickness: Int
 
     public init(shape: Shape, color: Pixel, thickness: Int) {
@@ -31,7 +34,9 @@ public struct Annotation: Equatable {
         switch thickness {
         case ...1: return 5
         case 2: return 8
-        default: return 12
+        case 3: return 12
+        case 4: return 18
+        default: return 26
         }
     }
 
@@ -47,7 +52,9 @@ public struct Annotation: Equatable {
         switch thickness {
         case ...1: return 3
         case 2: return 5
-        default: return 8
+        case 3: return 8
+        case 4: return 12
+        default: return 16
         }
     }
 
@@ -64,8 +71,13 @@ public struct Annotation: Equatable {
         switch shape {
         case .arrow: return arrowLength < Self.minArrowLength
         case .box(let r): return r.width < Self.minBoxSide || r.height < Self.minBoxSide
-        case .stamp: return false
+        case .stamp, .text: return false
         }
+    }
+
+    public var isText: Bool {
+        if case .text = shape { return true }
+        return false
     }
 
     /// 矢印の形の寸法。描画と当たり判定で同じものを使う。
@@ -105,6 +117,18 @@ public struct Annotation: Equatable {
             let cx = Double(c.x) + 0.5, cy = Double(c.y) + 0.5, rr = Double(r)
             return [CanvasPoint(cx - rr, cy - rr), CanvasPoint(cx + rr, cy - rr),
                     CanvasPoint(cx + rr, cy + rr), CanvasPoint(cx - rr, cy + rr)]
+        case .text:
+            return []
+        }
+    }
+
+    /// 選んだときに点線で囲む範囲（矢印は囲まない）。
+    public var selectionFrame: IRect? {
+        switch shape {
+        case .arrow: return nil
+        case .box(let r): return r
+        case .stamp(_, let c, let r): return IRect(x: c.x - r, y: c.y - r, width: 2 * r + 1, height: 2 * r + 1)
+        case .text(_, let f, _): return f
         }
     }
 
@@ -157,6 +181,13 @@ public struct Annotation: Equatable {
             for hp in handles where abs(p.x - hp.x) <= ht && abs(p.y - hp.y) <= ht { return .resize }
             if dist(p, CanvasPoint(c)) <= Double(r) + tolerance { return .body }
             return nil
+        case .text(_, let f, _):
+            // 文字の範囲（ふちの分も少し広めに）
+            let m = tolerance + 3
+            if p.x >= Double(f.minX) - m && p.x <= Double(f.maxX) + m && p.y >= Double(f.minY) - m && p.y <= Double(f.maxY) + m {
+                return .body
+            }
+            return nil
         }
     }
 
@@ -190,6 +221,8 @@ public struct Annotation: Equatable {
             default:
                 a.shape = .stamp(k, center: IPoint(c.x + dx, c.y + dy), radius: r)
             }
+        case .text(let s, let f, let size):
+            a.shape = .text(s, frame: f.offsetBy(dx: dx, dy: dy), size: size)
         }
         return a
     }
