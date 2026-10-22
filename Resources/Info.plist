@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>ja</string>
+	<key>CFBundleExecutable</key>
+	<string>Paint98</string>
+	<key>CFBundleIdentifier</key>
+	<string>jp.kashinya.paint98</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>ペイント 98</string>
+	<key>CFBundleDisplayName</key>
+	<string>ペイント 98</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@BUILD@</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.graphics-design</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Windows 98 のペイント風お絵かきアプリ</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>画像</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.png</string>
+				<string>public.jpeg</string>
+				<string>com.microsoft.bmp</string>
+				<string>com.compuserve.gif</string>
+				<string>public.tiff</string>
+				<string>public.heic</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

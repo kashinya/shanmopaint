@@ -1,0 +1,111 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Register Swift error matcher
+        run: echo "::add-matcher::.github/swift-matcher.json"
+
+      - name: Unit tests (PaintCore)
+        run: swift test 2>&1 | tee test.log
+
+      - name: Build Paint98.app
+        run: |
+          VERSION="1.0.${{ github.run_number }}" BUILD_NUMBER="${{ github.run_number }}" \
+            ./scripts/build-app.sh 2>&1 | tee build.log
+
+      - name: Self test (real window + clipboard)
+        id: selftest
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p selftest
+          dist/Paint98.app/Contents/MacOS/Paint98 --selftest "$PWD/selftest" > selftest/stdout.txt 2>&1 &
+          pid=$!
+          for i in $(seq 1 150); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "::error::selftest timed out"
+            kill "$pid"
+            code=124
+          else
+            wait "$pid"
+            code=$?
+          fi
+          cat selftest/stdout.txt
+          grep '✗' selftest/report.txt 2>/dev/null | sed 's/^/::error::selftest /'
+          exit $code
+
+      - name: Publish "latest" release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          sleep 3
+          files=(dist/Paint98.zip)
+          for f in selftest/*.png selftest/report.txt; do
+            [ -f "$f" ] || continue
+            case "$f" in */roundtrip.*) continue;; esac
+            cp "$f" "selftest-$(basename "$f")"
+            files+=("selftest-$(basename "$f")")
+          done
+          gh release create latest "${files[@]}" \
+            --title "ペイント 98（最新ビルド #${{ github.run_number }}）" \
+            --notes-file .github/release-notes.md \
+            --target "$GITHUB_SHA" --latest
+
+      - name: Save logs to ci-results branch
+        if: always() && github.event_name == 'push'
+        run: |
+          set +e
+          out="$RUNNER_TEMP/ci-results"
+          rm -rf "$out"; mkdir -p "$out"
+          cp -f ./*.log "$out/" 2>/dev/null
+          if [ -d selftest ]; then
+            mkdir -p "$out/selftest"
+            find selftest -maxdepth 1 -type f ! -name 'roundtrip.*' -exec cp {} "$out/selftest/" \;
+          fi
+          {
+            echo "sha: ${{ github.sha }}"
+            echo "run: ${{ github.run_number }} (${{ github.run_id }})"
+            echo "selftest: ${{ steps.selftest.outcome }}"
+            date -u
+          } > "$out/INFO.txt"
+          cd "$out"
+          git init -q -b ci-results
+          git add -A
+          git -c user.name="ci" -c user.email="ci@users.noreply.github.com" commit -qm "CI results for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-results
+
+      - name: Fail if self test failed
+        if: steps.selftest.outcome == 'failure'
+        run: exit 1
