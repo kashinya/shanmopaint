@@ -123,7 +123,7 @@ final class SkitchBarView: NSView {
                 let on = e.options.skitchThickness == t
                 if on { Win98.dither(r); Win98.draw(.pressed, in: r) } else { Win98.draw(.raised, in: r) }
                 // 細・中・太・極太・超極太
-                let w = CGFloat([0, 2, 4, 6, 10, 14][min(5, max(0, t))])
+                let w = CGFloat([0, 2, 3, 5, 8, 11][min(5, max(0, t))])
                 ink.setFill()
                 NSBezierPath(roundedRect: NSRect(x: r.minX + 6, y: r.midY - w / 2, width: r.width - 12, height: w),
                              xRadius: w / 2, yRadius: w / 2).fill()
