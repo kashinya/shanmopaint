@@ -682,4 +682,44 @@ final class EngineTests: XCTestCase {
         e.undo()
         XCTAssertEqual(e.canvas.size, ISize(10, 10))
     }
+
+    func testFlattenedIncludesFloatingSelectionWithoutCommitting() {
+        let e = makeEngine(20, 20)
+        e.resizeCanvas(to: ISize(20, 21))
+        e.paste(solid(5, 5, red), at: IPoint(2, 2), growCanvas: true)
+        let flat = e.flattened()
+        XCTAssertEqual(flat[3, 3], red)
+        XCTAssertEqual(e.canvas[3, 3], Colors.white, "flattened は状態を変えない")
+        XCTAssertNotNil(e.selection)
+    }
+
+    func testFinishPendingClosesPolygonAndCommitsSelection() {
+        let e = makeEngine(40, 40)
+        e.setTool(.polygon)
+        e.mouseDown(at: cp(5, 5), button: .primary)
+        e.mouseDragged(to: cp(30, 5))
+        e.mouseUp(at: cp(30, 5))
+        e.finishPending()
+        XCTAssertFalse(e.hasPendingShape)
+        XCTAssertEqual(e.canvas[20, 5], Colors.black)
+        e.resizeCanvas(to: ISize(40, 41))
+        e.paste(solid(3, 3, blue), at: IPoint(30, 30), growCanvas: true)
+        e.finishPending()
+        XCTAssertNil(e.selection)
+        XCTAssertEqual(e.canvas[31, 31], blue)
+    }
+
+    func testRightButtonShapeSwapsColors() {
+        let e = makeEngine(20, 20)
+        e.primary = red
+        e.secondary = blue
+        e.setTool(.rectangle)
+        e.options.fillStyle = .outlineAndFill
+        e.mouseDown(at: cp(0, 0), button: .secondary)
+        e.mouseDragged(to: cp(9, 9))
+        e.mouseUp(at: cp(9, 9))
+        XCTAssertEqual(e.canvas[0, 0], blue, "右ボタンは輪郭が背景色")
+        XCTAssertEqual(e.canvas[5, 5], red, "塗りは描画色")
+    }
 }
+

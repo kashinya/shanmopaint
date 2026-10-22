@@ -968,7 +968,7 @@ public final class PaintEngine {
 
     private func updateCurveOverlay() {
         guard let c = curve else { return }
-        let pts = PaintEngine.curvePoints(p0: c.p0, p3: c.p3, c1: c.c1, c2: c.c2, stage: c.stage == 0 && drag == nil ? 0 : c.stage)
+        let pts = PaintEngine.curvePoints(p0: c.p0, p3: c.p3, c1: c.c1, c2: c.c2, stage: c.stage)
         let o = options, color = colors(for: c.button).0
         overlay = { bmp in Raster.polyline(&bmp, pts, closed: false, width: o.lineWidth, color: color) }
         emit(.display)
