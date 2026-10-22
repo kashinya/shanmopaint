@@ -14,8 +14,11 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     var statusBar: StatusBarView { mainView.statusBar }
 
     private(set) var fileURL: URL?
-    private var fileFormat: BitmapIO.Format = .png
+    /// 上書き保存できる形式。開いたファイルが書き出せない形式（HEIC 等）なら nil にして、⌘S で保存パネルを出す。
+    private var fileFormat: BitmapIO.Format? = .png
     private(set) var zoom: CGFloat = 1
+    /// ウインドウを閉じた（保存の確認は済んでいる）。
+    private(set) var isClosed = false
     private var editingPaletteIndex: Int?
 
     var textStyle = TextStyle() {
@@ -51,6 +54,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         mainView.toolbox.onHover = { [weak self] s in self?.statusBar.hint = s }
         mainView.toolbox.onOptionsChanged = { [weak self] in self?.optionsChanged() }
         mainView.colorBox.onEditColor = { [weak self] i in self?.editColor(index: i) }
+        mainView.colorBox.onPick = { [weak self] in self?.editingPaletteIndex = nil }
         mainView.colorBox.onHover = { [weak self] s in self?.statusBar.hint = s }
         engine.listener = { [weak self] e in self?.handle(e) }
         engine.annotationRenderer = AnnotationRenderer.render
@@ -108,6 +112,8 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     func chooseTool(_ t: Tool) {
         commitText()
         engine.setTool(t)
+        // 閉じたフォントパネルは、テキストツールをもう一度押せば出る
+        if t == .text { fontPanel.show(near: window) }
         statusBar.hint = ToolInfo.name(t) + ": " + ToolInfo.hint(t)
     }
 
@@ -208,6 +214,15 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         statusBar.hint = "選択範囲（\(img.width)×\(img.height)）を切り取りました。"
     }
 
+    /// ⌘V の行き先。文字入力中でクリップボードに文字があれば入力欄へ、そうでなければ画像を貼る。
+    @objc func paintPaste(_ sender: Any?) {
+        if isEditingText, let tv = canvasView.textView, NSPasteboard.general.availableType(from: [.string]) != nil {
+            tv.paste(sender)
+            return
+        }
+        paste(sender)
+    }
+
     @objc func paste(_ sender: Any?) {
         commitText()
         guard let img = Clipboard.readImage() else {
@@ -216,8 +231,8 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             return
         }
         let before = engine.canvas.size
-        let frame = engine.paste(img, visibleOrigin: canvasView.visibleCanvasOrigin)
-        afterPaste(frame: frame, canvasBefore: before)
+        let r = engine.paste(img, visibleOrigin: canvasView.visibleCanvasOrigin)
+        afterPaste(frame: r.frame, floating: r.floating, canvasBefore: before)
     }
 
     @objc func pasteAsNewImage(_ sender: Any?) {
@@ -228,8 +243,12 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             return
         }
         engine.pasteAsNewImage(img)
+        // 新しい画像なので、開いていたファイルに上書きしないよう「無題」にする
+        fileURL = nil
+        fileFormat = .png
+        updateTitle()
         canvasView.scrollToCenter(IPoint(0, 0))
-        statusBar.hint = "クリップボードの画像（\(img.width)×\(img.height)）をそのままキャンバスにしました。"
+        statusBar.hint = "クリップボードの画像（\(img.width)×\(img.height)）を新しいキャンバスにしました。"
     }
 
     @objc func pasteAtPosition(_ sender: Any?) {
@@ -239,22 +258,37 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             statusBar.hint = "クリップボードに画像がありません。"
             return
         }
-        guard let pos = Dialogs.pastePosition(image: img.size, canvas: engine.canvas.size,
-                                              initial: canvasView.visibleCanvasOrigin) else { return }
-        let before = engine.canvas.size
-        engine.paste(img, at: pos.origin, growCanvas: pos.growCanvas)
-        afterPaste(frame: IRect(origin: pos.origin, size: img.size), canvasBefore: before)
+        let initial = PastePlacement.plan(image: img.size, canvas: engine.canvas.size, pristine: false,
+                                          fitWhenPristine: false, visibleOrigin: canvasView.visibleCanvasOrigin).origin
+        guard let pos = Dialogs.pastePosition(image: img.size, canvas: engine.canvas.size, initial: initial) else { return }
+        pasteFloating(img, at: pos.origin, growCanvas: pos.growCanvas)
     }
 
-    private func afterPaste(frame: IRect, canvasBefore: ISize) {
-        let after = engine.canvas.size
-        if after != canvasBefore {
-            canvasView.scrollToCenter(IPoint(0, 0))
-            statusBar.hint = "キャンバスを画像に合わせて \(after.width)×\(after.height) にしました。そのまま編集・保存できます。"
-        } else {
-            canvasView.scrollToVisible(canvasView.viewRect(frame))
-            statusBar.hint = "ドラッグか矢印キー（shift で 10 ピクセル）で位置を決め、外側をクリックで確定します。"
+    /// 指定位置に浮かせて貼る（位置を指定して貼り付け・option+ドロップ）。
+    private func pasteFloating(_ img: Bitmap, at origin: IPoint, growCanvas: Bool) {
+        let before = engine.canvas.size
+        guard let frame = engine.paste(img, at: origin, growCanvas: growCanvas) else {
+            Dialogs.error("キャンバスが大きくなりすぎます。",
+                          info: "広げたあとのキャンバスが \(PaintEngine.maxCanvasSide) ピクセルを超えないように、位置を指定してください。",
+                          window: window)
+            return
         }
+        afterPaste(frame: frame, floating: true, canvasBefore: before)
+    }
+
+    private func afterPaste(frame: IRect, floating: Bool, canvasBefore: ISize) {
+        let after = engine.canvas.size
+        if !floating {
+            canvasView.scrollToCenter(IPoint(0, 0))
+            statusBar.hint = after != canvasBefore
+                ? "キャンバスを画像に合わせて \(after.width)×\(after.height) にしました。そのまま編集・保存できます。"
+                : "貼り付けました（\(after.width)×\(after.height)）。"
+        } else {
+            canvasView.scrollToVisible(canvasView.viewRect(frame).insetBy(dx: -8, dy: -8))
+            let grew = after != canvasBefore ? "キャンバスを \(after.width)×\(after.height) に広げました。" : ""
+            statusBar.hint = grew + "ドラッグか矢印キー（shift で 10 ピクセル）で位置を決め、外側をクリックか return で確定します。"
+        }
+        mainView.toolbox.needsDisplay = true
         window.makeFirstResponder(canvasView)
     }
 
@@ -379,9 +413,12 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             engine.load(b)
             fileURL = url
             fileFormat = BitmapIO.Format.from(url: url)
+            if fileFormat == nil {
+                statusBar.hint = "\(url.lastPathComponent) は上書き保存できない形式なので、保存するときは名前を付けて保存します。"
+            }
             updateTitle()
             setZoom(1, center: IPoint(0, 0))
-            statusBar.hint = "\(url.lastPathComponent)（\(b.width)×\(b.height)）を開きました。"
+            if fileFormat != nil { statusBar.hint = "\(url.lastPathComponent)（\(b.width)×\(b.height)）を開きました。" }
             return true
         } catch {
             Dialogs.error(error.localizedDescription, window: window)
@@ -390,13 +427,11 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     }
 
     func handleDrop(_ url: URL, at point: IPoint, option: Bool) {
+        commitText()
         if option {
             // option を押しながらドロップ：その位置に貼り付け
             do {
-                let b = try BitmapIO.load(url)
-                let before = engine.canvas.size
-                engine.paste(b, at: point, growCanvas: true)
-                afterPaste(frame: IRect(origin: point, size: b.size), canvasBefore: before)
+                pasteFloating(try BitmapIO.load(url), at: point, growCanvas: true)
             } catch {
                 Dialogs.error(error.localizedDescription, window: window)
             }
@@ -417,11 +452,12 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
 
     /// 保存できたら true。
     private func save(asNew: Bool) -> Bool {
-        if !asNew, let url = fileURL {
-            return write(engine.flattened(), to: url, format: fileFormat, markSaved: true)
+        if !asNew, let url = fileURL, let format = fileFormat {
+            return write(engine.flattened(), to: url, format: format, markSaved: true)
         }
         let defaultName = (fileURL?.deletingPathExtension().lastPathComponent ?? "無題")
-        guard let (url, format) = runSavePanel(title: "名前を付けて保存", defaultName: defaultName, format: fileFormat) else { return false }
+        guard let (url, format) = runSavePanel(title: "名前を付けて保存", defaultName: defaultName,
+                                               format: fileFormat ?? .png) else { return false }
         guard write(engine.flattened(), to: url, format: format, markSaved: true) else { return false }
         fileURL = url
         fileFormat = format
@@ -462,8 +498,8 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         do {
             let b = try BitmapIO.load(url)
             let before = engine.canvas.size
-            let frame = engine.paste(b, visibleOrigin: canvasView.visibleCanvasOrigin)
-            afterPaste(frame: frame, canvasBefore: before)
+            let r = engine.paste(b, visibleOrigin: canvasView.visibleCanvasOrigin)
+            afterPaste(frame: r.frame, floating: r.floating, canvasBefore: before)
         } catch {
             Dialogs.error(error.localizedDescription, window: window)
         }
@@ -531,8 +567,11 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     }
 
     func windowWillClose(_ notification: Notification) {
+        isClosed = true
         fontPanel.hide()
     }
+
+    @objc func showFontPanel(_ sender: Any?) { fontPanel.show(near: window) }
 
     func windowDidResignKey(_ notification: Notification) {}
 
@@ -553,6 +592,9 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         case #selector(copyToFile(_:)):
             item.title = engine.hasSelection ? "選択範囲をファイルへ保存…" : "画像をファイルへ保存…"
             return true
+        case #selector(paintPaste(_:)):
+            if isEditingText && NSPasteboard.general.availableType(from: [.string]) != nil { return true }
+            return Clipboard.hasImage
         case #selector(paste(_:)), #selector(pasteAsNewImage(_:)), #selector(pasteAtPosition(_:)):
             return Clipboard.hasImage
         case #selector(toggleFitPaste(_:)):

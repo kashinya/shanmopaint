@@ -14,6 +14,8 @@ final class CanvasView: NSView, NSTextViewDelegate {
     var zoom: CGFloat = 1 { didSet { updateFrameSize() } }
     var showGrid = false { didSet { needsDisplay = true } }
     private(set) var textView: NSTextView?
+    /// 入力欄ごとの「元に戻す」（ウインドウ共通のものを使うと、消えた入力欄の操作が残る）
+    private var textUndo: UndoManager?
 
     private var cachedImage: CGImage?
     private var hover: NSPoint?
@@ -32,6 +34,8 @@ final class CanvasView: NSView, NSTextViewDelegate {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    // アプリが前面にあるときは、フォントパネル等から戻った最初のクリックでも描ける
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { NSApp.isActive }
     override var isOpaque: Bool { true }
 
     // MARK: - 座標
@@ -404,6 +408,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
             positionTextView()
         } else if let tv = textView {
             textView = nil
+            textUndo = nil
             tv.delegate = nil
             tv.removeFromSuperview()
             window?.makeFirstResponder(self)
@@ -412,6 +417,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
     }
 
     private func createTextView(_ box: IRect) {
+        textUndo = UndoManager()
         let tv = NSTextView(frame: viewRect(box))
         tv.isRichText = false
         tv.importsGraphics = false
@@ -473,9 +479,12 @@ final class CanvasView: NSView, NSTextViewDelegate {
         needsDisplay = true
     }
 
+    func undoManager(for view: NSTextView) -> UndoManager? { textUndo }
+
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            controller?.commitText()
+            // キー処理の途中で入力欄を消さないよう、処理が終わってから確定する
+            DispatchQueue.main.async { [weak self] in self?.controller?.commitText() }
             return true
         }
         return false
@@ -498,7 +507,12 @@ final class CanvasView: NSView, NSTextViewDelegate {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let url = droppedImageURL(sender) else { return false }
         let p = convert(sender.draggingLocation, from: nil)
-        controller?.handleDrop(url, at: canvasPoint(p).pixel, option: NSEvent.modifierFlags.contains(.option))
+        let point = canvasPoint(p).pixel, option = NSEvent.modifierFlags.contains(.option)
+        // ドラッグが終わってから開く（保存確認などのダイアログでドラッグ元を待たせない）
+        DispatchQueue.main.async { [weak self] in
+            NSApp.activate(ignoringOtherApps: true)
+            self?.controller?.handleDrop(url, at: point, option: option)
+        }
         return true
     }
 }

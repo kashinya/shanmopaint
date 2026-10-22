@@ -79,15 +79,33 @@ enum BitmapIO {
 
     static func load(_ url: URL) throws -> Bitmap {
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil),
+              let img = orientedImage(src),
               let b = bitmap(from: img) else { throw IOError.unreadable(url) }
         return b
     }
 
     static func load(data: Data) -> Bitmap? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+              let img = orientedImage(src) else { return nil }
         return bitmap(from: img)
+    }
+
+    /// 写真の向き（EXIF の Orientation）を反映した画像。ImageIO はそのままだと向きを無視する。
+    private static func orientedImage(_ src: CGImageSource) -> CGImage? {
+        let idx = CGImageSourceGetPrimaryImageIndex(src)
+        let props = CGImageSourceCopyPropertiesAtIndex(src, idx, nil) as? [CFString: Any] ?? [:]
+        let orientation = (props[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        let w = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue ?? 0
+        let h = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue ?? 0
+        if orientation != 1 && w > 0 && h > 0 {
+            let opts: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: max(w, h),
+            ]
+            if let img = CGImageSourceCreateThumbnailAtIndex(src, idx, opts as CFDictionary) { return img }
+        }
+        return CGImageSourceCreateImageAtIndex(src, idx, nil)
     }
 
     /// 保存できる形式。
@@ -114,14 +132,15 @@ enum BitmapIO {
             }
         }
 
-        static func from(url: URL) -> Format {
-            let ext = url.pathExtension.lowercased()
-            switch ext {
+        /// 拡張子から上書き保存の形式を決める。書き出せない形式（HEIC・PSD 等）なら nil。
+        static func from(url: URL) -> Format? {
+            switch url.pathExtension.lowercased() {
+            case "png": return .png
             case "jpg", "jpeg": return .jpeg
             case "bmp": return .bmp
             case "gif": return .gif
             case "tif", "tiff": return .tiff
-            default: return .png
+            default: return nil
             }
         }
     }
@@ -152,19 +171,23 @@ enum Clipboard {
         NSPasteboard.PasteboardType(UTType.bmp.identifier),
     ]
 
-    /// クリップボードに貼り付けられる画像があるか。
+    /// クリップボードに貼り付けられそうな画像があるか（メニューの有効・無効用。型だけ見て中身は読まない）。
     static var hasImage: Bool {
         let pb = pasteboard
+        if pb.availableType(from: [.fileURL]) != nil { return true }
         if pb.availableType(from: imageTypes) != nil { return true }
-        if imageFileURL(pb) != nil { return true }
         return NSImage.canInit(with: pb)
     }
 
     /// クリップボードの画像を読む（ピクセル寸法そのまま）。
     static func readImage() -> Bitmap? {
         let pb = pasteboard
-        // Finder でコピーした画像ファイル
-        if let url = imageFileURL(pb), let b = try? BitmapIO.load(url) { return b }
+        // Finder でコピーしたファイル：ファイルの中身だけを使う
+        // （画像でないファイルのときに、一緒に入っている Finder のアイコン画像を貼らないため）
+        if pb.availableType(from: [.fileURL]) != nil {
+            guard let url = imageFileURL(pb) else { return nil }
+            return try? BitmapIO.load(url)
+        }
         // スクリーンショット・ブラウザ等の画像データ
         for t in imageTypes {
             if let d = pb.data(forType: t), let b = BitmapIO.load(data: d) { return b }

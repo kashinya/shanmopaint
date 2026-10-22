@@ -236,14 +236,88 @@ final class EngineTests: XCTestCase {
 
     func testPasteIntoPristineCanvasResizesToImage() {
         let e = makeEngine()
-        e.paste(solid(30, 20, red))
-        XCTAssertEqual(e.canvas.size, ISize(30, 20))
-        XCTAssertEqual(e.tool, .select)
-        XCTAssertNotNil(e.selection)
-        XCTAssertEqual(e.renderDisplay()[29, 19], red)
-        e.commitSelection()
+        let r = e.paste(solid(30, 20, red))
+        XCTAssertFalse(r.floating, "キャンバス全体を覆うので浮かせずにすぐ描き込む")
         XCTAssertEqual(e.canvas, solid(30, 20, red))
+        XCTAssertNil(e.selection)
+        XCTAssertEqual(e.tool, .pencil, "道具はそのまま（ドラッグで画像ごと動かない）")
         XCTAssertTrue(e.isModified)
+    }
+
+    func testUndoBackToPristineFitsNextPaste() {
+        let e = makeEngine(100, 80)
+        e.paste(solid(30, 20, red))
+        e.undo()
+        XCTAssertEqual(e.canvas.size, ISize(100, 80))
+        XCTAssertTrue(e.isPristine, "元に戻しきったらまっさら扱い")
+        e.paste(solid(40, 10, blue))
+        XCTAssertEqual(e.canvas, solid(40, 10, blue))
+    }
+
+    func testOpenedImageNeverBecomesPristineByUndo() {
+        let e = makeEngine(10, 10)
+        e.load(solid(50, 40, red))
+        e.setTool(.pencil)
+        e.mouseDown(at: cp(1, 1), button: .primary)
+        e.mouseUp(at: cp(1, 1))
+        e.undo()
+        XCTAssertFalse(e.isPristine)
+    }
+
+    func testLargerImageCoveringWholeGrownCanvasIsCommittedDirectly() {
+        let e = makeEngine(50, 50)
+        e.resizeCanvas(to: ISize(50, 51))
+        let r = e.paste(solid(60, 60, red))
+        XCTAssertFalse(r.floating)
+        XCTAssertEqual(e.canvas, solid(60, 60, red))
+    }
+
+    func testPasteAtNegativeOriginGrowsLeftAndUp() {
+        let e = makeEngine(20, 20)
+        e.resizeCanvas(to: ISize(20, 21))
+        e.setTool(.pencil)
+        e.mouseDown(at: cp(0, 0), button: .primary)
+        e.mouseUp(at: cp(0, 0))
+        let f = e.paste(solid(10, 10, red), at: IPoint(-5, -3), growCanvas: true)
+        XCTAssertEqual(f, IRect(x: 0, y: 0, width: 10, height: 10))
+        XCTAssertEqual(e.canvas.size, ISize(25, 24))
+        e.commitSelection()
+        XCTAssertEqual(e.canvas[9, 9], red)
+        XCTAssertEqual(e.canvas[24, 23], Colors.white)
+        // 元の絵は右下へずれている（元の (0,0) の黒い点 → (5,3)。ただし貼った画像の下）
+        e.undo()
+        XCTAssertEqual(e.canvas.size, ISize(20, 21))
+        XCTAssertEqual(e.canvas[0, 0], Colors.black)
+    }
+
+    func testPasteAtRejectsHugeGrowth() {
+        let e = makeEngine(20, 20)
+        XCTAssertNil(e.paste(solid(10, 10, red), at: IPoint(50_000, 50_000), growCanvas: true))
+        XCTAssertEqual(e.canvas.size, ISize(20, 20))
+        XCTAssertFalse(e.canUndo)
+    }
+
+    func testDeletingFloatingPasteIsUndoable() {
+        let e = makeEngine(50, 50)
+        e.resizeCanvas(to: ISize(50, 51))
+        e.paste(solid(10, 10, red), at: IPoint(5, 5), growCanvas: true)
+        e.deleteSelection()
+        XCTAssertEqual(e.canvas[6, 6], Colors.white)
+        e.undo()
+        XCTAssertEqual(e.canvas[6, 6], red, "消す直前の見た目に戻る")
+    }
+
+    func testCommitAfterSaveIsNotAModification() {
+        let e = makeEngine(50, 50)
+        e.resizeCanvas(to: ISize(50, 51))
+        e.paste(solid(10, 10, red), at: IPoint(5, 5), growCanvas: true)
+        e.markSaved()
+        e.commitSelection()
+        XCTAssertFalse(e.isModified)
+        e.paste(solid(10, 10, red), at: IPoint(5, 5), growCanvas: true)
+        e.markSaved()
+        e.nudgeSelection(dx: 1, dy: 0)
+        XCTAssertTrue(e.isModified, "動かしたら変更あり")
     }
 
     func testPasteLargerImageGrowsCanvasAndFillsWithBackground() {

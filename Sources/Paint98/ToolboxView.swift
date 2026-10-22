@@ -14,6 +14,8 @@ final class ToolboxView: NSView {
     private var tracking: NSTrackingArea?
 
     override var isFlipped: Bool { true }
+    // 他のアプリから戻った最初のクリックでも道具を選べるように
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

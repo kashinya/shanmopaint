@@ -35,7 +35,10 @@ enum Dialogs {
     }
 
     private static func parse(_ f: NSTextField, _ range: ClosedRange<Int>) -> Int? {
-        guard let v = Int(f.stringValue.trimmingCharacters(in: .whitespaces)), range.contains(v) else { return nil }
+        // 日本語入力のまま打った全角数字・全角マイナスも受け付ける
+        let half = f.stringValue.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? f.stringValue
+        let t = half.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "−", with: "-")
+        guard let v = Int(t), range.contains(v) else { return nil }
         return v
     }
 
@@ -123,7 +126,7 @@ enum Dialogs {
             ("←", .left), ("・", .center), ("→", .right),
             ("↙", .bottomLeft), ("↓", .bottom), ("↘", .bottomRight),
         ]
-        let handler = AnchorHandler(image: image, canvas: canvas, x: x, y: y)
+        let handler = AnchorHandler(image: image, canvas: canvas, x: x, y: y, grow: grow)
         let anchorButtons: [NSButton] = anchors.enumerated().map { i, a in
             let b = NSButton(title: a.0, target: handler, action: #selector(AnchorHandler.pick(_:)))
             b.tag = i
@@ -169,17 +172,22 @@ enum Dialogs {
     private final class AnchorHandler: NSObject {
         let image: ISize, canvas: ISize
         let x: NSTextField, y: NSTextField
+        let grow: NSButton
         var anchors: [PastePlacement.Anchor] = []
 
-        init(image: ISize, canvas: ISize, x: NSTextField, y: NSTextField) {
+        init(image: ISize, canvas: ISize, x: NSTextField, y: NSTextField, grow: NSButton) {
             self.image = image
             self.canvas = canvas
             self.x = x
             self.y = y
+            self.grow = grow
         }
 
         @objc func pick(_ sender: NSButton) {
-            let o = PastePlacement.origin(anchor: anchors[sender.tag], image: image, canvas: canvas)
+            // 画像の方が大きくてキャンバスを広げるなら、広げた後の大きさで位置を合わせる（左や上が切れないように）
+            var c = canvas
+            if grow.state == .on { c = ISize(max(c.width, image.width), max(c.height, image.height)) }
+            let o = PastePlacement.origin(anchor: anchors[sender.tag], image: image, canvas: c)
             x.stringValue = "\(o.x)"
             y.stringValue = "\(o.y)"
         }

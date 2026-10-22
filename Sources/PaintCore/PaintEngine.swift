@@ -114,6 +114,10 @@ public final class PaintEngine {
     public private(set) var isModified = false
     /// 新規作成から一度も手を加えていないか。
     public private(set) var isPristine = true
+    /// 履歴のいちばん底（新規作成直後）がまっさらだったか。元に戻しきったら isPristine に戻す。
+    private var basePristine = true
+    /// キャンバスを広げるときの上限（指定位置貼り付けの打ち間違いで巨大な画像を作らないため）。
+    public static let maxCanvasSide = 10_000
     /// ドラッグ中の図形・枠の大きさ（ステータスバー用）。
     public private(set) var liveSize: ISize?
     /// 浮いている注釈（矢印・スタンプ）。
@@ -385,7 +389,9 @@ public final class PaintEngine {
             setLassoOverlay(pts)
         case .move(let grab):
             guard var sel = selection else { return }
-            sel.frame.origin = IPoint(p.x - grab.x, p.y - grab.y)
+            let o = IPoint(p.x - grab.x, p.y - grab.y)
+            if o != sel.frame.origin { isModified = true }
+            sel.frame.origin = o
             selection = sel
             emit(.selection)
             emit(.display)
@@ -393,6 +399,7 @@ public final class PaintEngine {
             guard var sel = selection else { return }
             let dx = Int((cp.x - start.x).rounded()), dy = Int((cp.y - start.y).rounded())
             sel.frame = h.resize(f0, dx: dx, dy: dy)
+            if sel.frame != f0 { isModified = true }
             selection = sel
             liveSize = sel.frame.size
             emit(.selection)
@@ -598,12 +605,13 @@ public final class PaintEngine {
         guard let sel = selection else { return }
         selection = nil
         if sel.lifted {
+            // 変更済みの印は、貼り付け・移動・伸縮の時点で付けている（保存直後の確定で「変更あり」にしない）
             composite(sel, onto: &canvas)
-            isModified = true
             isPristine = false
         }
         emit(.selection)
         emit(.display)
+        emit(.history)
     }
 
     /// コピーする画像。選択範囲があればその中身、なければキャンバス全体。
@@ -626,6 +634,11 @@ public final class PaintEngine {
         if !sel.lifted {
             if !sel.recorded { history.push(canvas) }
             erase(sel.frame, mask: sel.mask)
+        } else {
+            // 浮いている画像を消す：消す直前の見た目に戻れるようにする
+            var before = canvas
+            composite(sel, onto: &before)
+            history.push(before)
         }
         selection = nil
         changed()
@@ -640,6 +653,7 @@ public final class PaintEngine {
     public func moveSelection(to origin: IPoint) {
         guard selection != nil else { return }
         lift(copy: false)
+        if selection!.frame.origin != origin { isModified = true }
         selection!.frame.origin = origin
         emit(.selection)
         emit(.display)
@@ -657,26 +671,59 @@ public final class PaintEngine {
     }
 
     /// 貼り付け。
-    /// - まっさらなキャンバスなら、キャンバスを画像と同じ大きさにする
-    /// - 画像の方が大きければキャンバスを広げて左上に置く
+    /// - まっさらなキャンバスなら、キャンバスを画像と同じ大きさにして、そのまま描き込む（すぐ編集・保存できる）
+    /// - 画像の方が大きければキャンバスを広げて左上に置く（ぴったり覆うならそのまま描き込む）
     /// - キャンバスの方が広ければ、見えている左上に浮かせて置く（ドラッグや矢印キーで位置を決める）
+    /// - Returns: 画像を置いた範囲と、浮かせたかどうか
     @discardableResult
-    public func paste(_ image: Bitmap, visibleOrigin: IPoint = IPoint(0, 0)) -> IRect {
+    public func paste(_ image: Bitmap, visibleOrigin: IPoint = IPoint(0, 0)) -> (frame: IRect, floating: Bool) {
         finalizePending()
         let plan = PastePlacement.plan(image: image.size, canvas: canvas.size, pristine: isPristine,
                                        fitWhenPristine: fitCanvasToPasteWhenPristine, visibleOrigin: visibleOrigin)
+        let frame = IRect(origin: plan.origin, size: image.size)
+        if plan.origin == IPoint(0, 0) && plan.canvas == image.size {
+            // キャンバス全体を覆う：浮かせるとドラッグで画像ごと動いてしまうので、すぐ確定する
+            history.push(canvas)
+            var img = image
+            img.makeOpaque()
+            let resized = img.size != canvas.size
+            canvas = img
+            changed()
+            if resized { emit(.canvasSize) }
+            return (frame, false)
+        }
         placePaste(image, canvasSize: plan.canvas, origin: plan.origin)
-        return IRect(origin: plan.origin, size: image.size)
+        return (frame, true)
     }
 
-    /// 位置を指定して貼り付け。growCanvas が true なら、はみ出す分だけキャンバスを広げる。
-    public func paste(_ image: Bitmap, at origin: IPoint, growCanvas: Bool) {
-        finalizePending()
+    /// 位置を指定して貼り付け。growCanvas が true なら、はみ出す分だけキャンバスを広げる
+    /// （左や上にはみ出すときは、今の絵を右下へずらして広げる）。
+    /// - Returns: 画像を置いた範囲（ずらした後の座標）。大きすぎて置けないときは nil。
+    @discardableResult
+    public func paste(_ image: Bitmap, at origin: IPoint, growCanvas: Bool) -> IRect? {
+        var frame = IRect(origin: origin, size: image.size)
         var size = canvas.size
+        var shift = IPoint(0, 0)
         if growCanvas {
-            size = ISize(max(size.width, origin.x + image.width), max(size.height, origin.y + image.height))
+            let minX = min(0, frame.minX), minY = min(0, frame.minY)
+            let maxX = max(canvas.width, frame.maxX), maxY = max(canvas.height, frame.maxY)
+            size = ISize(maxX - minX, maxY - minY)
+            shift = IPoint(-minX, -minY)
+            let limit = max(Self.maxCanvasSide, image.width, image.height)
+            if size.width > limit || size.height > limit { return nil }
         }
-        placePaste(image, canvasSize: size, origin: origin)
+        finalizePending()
+        if shift != IPoint(0, 0) {
+            history.push(canvas)
+            var grown = Bitmap(width: size.width, height: size.height, fill: secondary)
+            grown.draw(canvas, at: shift)
+            canvas = grown
+            frame = frame.offsetBy(dx: shift.x, dy: shift.y)
+            placePaste(image, canvasSize: size, origin: frame.origin, pushHistory: false)
+        } else {
+            placePaste(image, canvasSize: size, origin: frame.origin)
+        }
+        return frame
     }
 
     /// 画像そのものを新しいキャンバスにする（キャンバスは画像と同じ大きさ）。
@@ -691,8 +738,8 @@ public final class PaintEngine {
         if resized { emit(.canvasSize) }
     }
 
-    private func placePaste(_ image: Bitmap, canvasSize: ISize, origin: IPoint) {
-        history.push(canvas)
+    private func placePaste(_ image: Bitmap, canvasSize: ISize, origin: IPoint, pushHistory: Bool = true) {
+        if pushHistory { history.push(canvas) }
         if canvasSize != canvas.size {
             canvas = canvas.resizingCanvas(to: canvasSize, fill: secondary)
             emit(.canvasSize)
@@ -764,6 +811,7 @@ public final class PaintEngine {
         canvas = Bitmap(width: size.width, height: size.height, fill: Colors.white)
         isModified = false
         isPristine = true
+        basePristine = true
         emitAll()
     }
 
@@ -774,6 +822,7 @@ public final class PaintEngine {
         b.makeOpaque()
         canvas = b
         isPristine = false
+        basePristine = false
         emitAll()
     }
 
@@ -839,6 +888,8 @@ public final class PaintEngine {
             return
         }
         apply(historyState: prev)
+        // 新規作成直後まで戻しきったら、また「まっさら」扱い（貼り付けでキャンバスが画像サイズになる）
+        isPristine = basePristine && !history.canUndo && !history.droppedOldest
     }
 
     public func redo() {

@@ -45,7 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let c = controller, c.window.isVisible else { return .terminateNow }
+        // しまったウインドウ・隠したアプリでも確認する（閉じたウインドウだけは確認済み）
+        guard let c = controller, !c.isClosed else { return .terminateNow }
         c.commitText()
         return c.confirmDiscard() ? .terminateNow : .terminateCancel
     }
@@ -110,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sep,
             item("切り取り", #selector(MainController.cut(_:)), "x"),
             item("コピー", #selector(MainController.copy(_:)), "c"),
-            item("貼り付け", #selector(MainController.paste(_:)), "v"),
+            item("貼り付け", #selector(MainController.paintPaste(_:)), "v"),
             item("位置を指定して貼り付け…", #selector(MainController.pasteAtPosition(_:)), "v", [.command, .shift]),
             item("新規画像として貼り付け", #selector(MainController.pasteAsNewImage(_:)), "v", [.command, .option]),
             sep,
@@ -133,6 +134,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("縮小", #selector(MainController.zoomOut(_:)), "-"),
             item("実際のサイズ", #selector(MainController.actualSize(_:)), "0"),
             item("グリッドを表示", #selector(MainController.toggleGrid(_:)), "g"),
+            sep,
+            item("フォントパネル", #selector(MainController.showFontPanel(_:))),
         ]))
 
         main.addItem(menu("イメージ", [

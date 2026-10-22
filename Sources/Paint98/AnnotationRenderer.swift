@@ -25,8 +25,8 @@ enum AnnotationRenderer {
         guard len >= 1 else { return nil }
         let ux = dx / len, uy = dy / len
         let nx = -uy, ny = ux
-        let headLen = min(w * 2.8, len * 0.65)
-        let headHalf = max(w * 1.55, headLen * 0.55)
+        let headLen = min(w * 3.3, len * 0.65)
+        let headHalf = max(w * 1.8, headLen * 0.58)
         let tailHalf = max(0.8, w * 0.16)
         let neck = CGPoint(x: head.x - ux * headLen, y: head.y - uy * headLen)
         // 頭の付け根を少しへこませて Skitch っぽく

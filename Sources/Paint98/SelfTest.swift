@@ -107,9 +107,10 @@ final class SelfTest {
                 }
             }),
             ("まっさらなキャンバスに貼り付け（⌘V）", {
-                self.c.paste(nil)
+                self.c.paintPaste(nil)
                 self.check(self.engine.canvas.size == img.size, "キャンバスが画像サイズになる \(self.engine.canvas.size)")
-                self.check(self.engine.selection?.frame == IRect(x: 0, y: 0, width: 320, height: 200), "左上に浮いている")
+                self.check(self.engine.selection == nil, "浮かせずにそのまま描き込む（すぐ編集できる）")
+                self.check(self.engine.tool == .pencil, "道具はそのまま")
                 self.snapshot("01-paste-into-new-canvas")
             }),
             ("確定して画素を確認", {
@@ -207,6 +208,18 @@ final class SelfTest {
                 s.smooth = true
                 s.size = 16
                 self.c.textStyle = s
+            }),
+            ("文字入力中に ⌘V（クリップボードは画像）", {
+                self.c.chooseTool(.text)
+                self.drag(IPoint(20, 120), IPoint(200, 160))
+                self.c.canvasView.textView?.insertText("確定される文字", replacementRange: NSRange(location: NSNotFound, length: 0))
+                Clipboard.write(small)
+                self.check(self.c.validateMenuItem(NSMenuItem(title: "", action: #selector(MainController.paintPaste(_:)), keyEquivalent: "")),
+                           "貼り付けメニューが有効")
+                self.c.paintPaste(nil)
+                self.check(self.engine.textBox == nil, "入力中の文字は確定される")
+                self.check(self.engine.selection?.frame.size == small.size, "画像が浮いた状態で貼られる")
+                self.engine.commitSelection()
             }),
             ("全部の道具を一通り使う", {
                 let tools: [Tool] = [.pencil, .brush, .airbrush, .eraser, .line, .rectangle, .ellipse, .roundedRectangle, .fill]

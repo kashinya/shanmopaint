@@ -10,10 +10,13 @@ final class ColorBoxView: NSView {
     var palette: [Pixel] = Colors.win98Palette
     var onEditColor: ((Int?) -> Void)?
     var onHover: ((String) -> Void)?
+    /// パレットの色をクリックで選んだ（色の編集中の対象を外すため）
+    var onPick: (() -> Void)?
 
     private var tracking: NSTrackingArea?
 
     override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -71,6 +74,7 @@ final class ColorBoxView: NSView {
             onEditColor?(i)
             return
         }
+        onPick?()
         if event.modifierFlags.contains(.control) {
             engine.secondary = palette[i]
         } else {
@@ -80,6 +84,7 @@ final class ColorBoxView: NSView {
 
     override func rightMouseDown(with event: NSEvent) {
         guard let engine = engine, let i = index(at: convert(event.locationInWindow, from: nil)) else { return }
+        onPick?()
         engine.secondary = palette[i]
     }
 

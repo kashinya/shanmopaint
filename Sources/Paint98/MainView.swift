@@ -26,6 +26,12 @@ final class MainView: NSView {
         scrollView.backgroundColor = Win98.workspace
         scrollView.autohidesScrollers = true
         for v in [toolbox, scrollView, colorBox, statusBar] as [NSView] { addSubview(v) }
+        // スクロールバーが出たり消えたりして見える範囲が変わったら、キャンバスの外枠を合わせ直す
+        scrollView.contentView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scrollView.contentView,
+                                               queue: .main) { [weak self] _ in
+            self?.canvasView.updateFrameSize()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
