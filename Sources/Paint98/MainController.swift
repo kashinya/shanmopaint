@@ -112,9 +112,23 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     func chooseTool(_ t: Tool) {
         commitText()
         engine.setTool(t)
+        if canvasView.textView == nil { window.makeFirstResponder(canvasView) }
         // 閉じたフォントパネルは、テキストツールをもう一度押せば出る
         if t == .text { fontPanel.show(near: window) }
         statusBar.hint = ToolInfo.name(t) + ": " + ToolInfo.hint(t)
+    }
+
+    /// 入力中の ⌘B / ⌘I / ⌘U。
+    func toggleTextStyle(_ key: String) {
+        var s = textStyle
+        switch key {
+        case "b": s.bold.toggle()
+        case "i": s.italic.toggle()
+        case "u": s.underline.toggle()
+        default: return
+        }
+        textStyle = s
+        fontPanel.setStyle(s)
     }
 
     private func optionsChanged() {
@@ -578,6 +592,10 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
     // MARK: - メニューの有効・無効
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        // 文字の入力中は、⌘I などで入力が確定されて画像全体が変わってしまわないよう止めておく
+        let destructive: [Selector] = [#selector(invertColors(_:)), #selector(flipRotate(_:)), #selector(stretch(_:)),
+                                       #selector(clearImage(_:)), #selector(canvasSize(_:)), #selector(cropToSelection(_:))]
+        if isEditingText, let a = item.action, destructive.contains(a) { return false }
         switch item.action {
         case #selector(paintUndo(_:)):
             if isEditingText, canvasView.textView?.undoManager?.canUndo == true { return true }

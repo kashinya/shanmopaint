@@ -37,7 +37,11 @@ struct TextStyle: Equatable {
     }
 
     func attributes(scale: CGFloat, color: NSColor) -> [NSAttributedString.Key: Any] {
-        var a: [NSAttributedString.Key: Any] = [.font: font(scale: scale), .foregroundColor: color]
+        // タブ位置も表示倍率に合わせる（入力中と確定後で位置がずれないように）
+        let para = NSMutableParagraphStyle()
+        para.tabStops = []
+        para.defaultTabInterval = 28 * scale
+        var a: [NSAttributedString.Key: Any] = [.font: font(scale: scale), .foregroundColor: color, .paragraphStyle: para]
         if underline { a[.underlineStyle] = NSUnderlineStyle.single.rawValue }
         return a
     }
@@ -98,6 +102,42 @@ struct TextStyle: Equatable {
         }
         return image.map { ($0, margin) }
     }
+}
+
+/// テキストツールの入力欄。画像しかないクリップボードの ⌘V と、⌘B / ⌘I / ⌘U を受け持つ。
+final class PaintTextView: NSTextView {
+    var onPasteImage: (() -> Void)?
+    var onStyleShortcut: ((String) -> Void)?
+
+    private var clipboardHasOnlyImage: Bool {
+        NSPasteboard.general.availableType(from: [.string]) == nil && Clipboard.hasImage
+    }
+
+    override func paste(_ sender: Any?) {
+        if clipboardHasOnlyImage, let f = onPasteImage {
+            f()
+            return
+        }
+        super.paste(sender)
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(paste(_:)) && clipboardHasOnlyImage { return true }
+        return super.validateMenuItem(menuItem)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags == .command, let ch = event.charactersIgnoringModifiers?.lowercased(),
+           ["b", "i", "u"].contains(ch), let f = onStyleShortcut {
+            f(ch)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    /// 縦書きにすると確定後の見た目と食い違うので、切り替えさせない
+    override func changeLayoutOrientation(_ sender: Any?) {}
 }
 
 /// 浮かんでいる「フォント」パネル。テキストツールを選ぶと出てくる。
@@ -186,7 +226,13 @@ final class FontPanelController: NSObject {
     @objc private func changed(_ sender: Any?) {
         var s = style
         if let f = familyPopup.titleOfSelectedItem { s.family = f }
-        if let v = Double(sizeBox.stringValue.trimmingCharacters(in: .whitespaces)), v >= 1, v <= 500 { s.size = CGFloat(v) }
+        // 日本語入力のまま打った全角数字も受け付ける
+        let raw = sizeBox.stringValue.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? sizeBox.stringValue
+        if let v = Double(raw.trimmingCharacters(in: .whitespaces)), v >= 1, v <= 500 {
+            s.size = CGFloat(v)
+        } else {
+            sizeBox.stringValue = "\(Int(style.size))"
+        }
         s.bold = boldButton.state == .on
         s.italic = italicButton.state == .on
         s.underline = underlineButton.state == .on
@@ -199,6 +245,11 @@ final class FontPanelController: NSObject {
             boldButton.state = .on
         }
         style = s
+        if (sender as AnyObject?) === sizeBox {
+            // サイズを決めたら、続けて打つ文字がキャンバスの入力欄に入るよう戻す
+            panel.makeFirstResponder(nil)
+            NSApp.mainWindow?.makeKey()
+        }
     }
 
     func show(near window: NSWindow) {

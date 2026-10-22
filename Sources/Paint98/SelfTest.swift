@@ -107,7 +107,10 @@ final class SelfTest {
                 }
             }),
             ("まっさらなキャンバスに貼り付け（⌘V）", {
-                self.c.paintPaste(nil)
+                self.c.window.makeFirstResponder(self.c.canvasView)
+                self.check(self.c.canvasView.validateMenuItem(NSMenuItem(title: "", action: #selector(NSText.paste(_:)), keyEquivalent: "")),
+                           "キャンバスで貼り付けメニューが有効")
+                self.c.canvasView.paste(nil)
                 self.check(self.engine.canvas.size == img.size, "キャンバスが画像サイズになる \(self.engine.canvas.size)")
                 self.check(self.engine.selection == nil, "浮かせずにそのまま描き込む（すぐ編集できる）")
                 self.check(self.engine.tool == .pencil, "道具はそのまま")
@@ -214,9 +217,19 @@ final class SelfTest {
                 self.drag(IPoint(20, 120), IPoint(200, 160))
                 self.c.canvasView.textView?.insertText("確定される文字", replacementRange: NSRange(location: NSNotFound, length: 0))
                 Clipboard.write(small)
-                self.check(self.c.validateMenuItem(NSMenuItem(title: "", action: #selector(MainController.paintPaste(_:)), keyEquivalent: "")),
-                           "貼り付けメニューが有効")
-                self.c.paintPaste(nil)
+                let tv = self.c.canvasView.textView as? PaintTextView
+                self.check(tv != nil, "入力欄は PaintTextView")
+                // ⌘I は斜体の切り替え（画像の色の反転にならない）
+                let before = self.c.textStyle.italic
+                let ev = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+                                          windowNumber: self.c.window.windowNumber, context: nil, characters: "i",
+                                          charactersIgnoringModifiers: "i", isARepeat: false, keyCode: 34)
+                if let ev = ev { _ = tv?.performKeyEquivalent(with: ev) }
+                self.check(self.c.textStyle.italic != before, "入力中の ⌘I は斜体の切り替え")
+                self.c.toggleTextStyle("i")
+                self.check(tv?.validateMenuItem(NSMenuItem(title: "", action: #selector(NSText.paste(_:)), keyEquivalent: "")) == true,
+                           "入力中でも画像の貼り付けメニューが有効")
+                tv?.paste(nil)
                 self.check(self.engine.textBox == nil, "入力中の文字は確定される")
                 self.check(self.engine.selection?.frame.size == small.size, "画像が浮いた状態で貼られる")
                 self.engine.commitSelection()

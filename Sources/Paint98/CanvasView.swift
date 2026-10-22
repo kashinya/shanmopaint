@@ -2,7 +2,7 @@ import AppKit
 import PaintCore
 
 /// キャンバス（スクロールビューの中身）。描画・マウス・キー・テキスト入力枠を受け持つ。
-final class CanvasView: NSView, NSTextViewDelegate {
+final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
     static let inset: CGFloat = 4
 
     /// キャンバスの右・下・右下にある大きさ変更つまみ。
@@ -418,7 +418,9 @@ final class CanvasView: NSView, NSTextViewDelegate {
 
     private func createTextView(_ box: IRect) {
         textUndo = UndoManager()
-        let tv = NSTextView(frame: viewRect(box))
+        let tv = PaintTextView(frame: viewRect(box))
+        tv.onPasteImage = { [weak self] in self?.controller?.paste(nil) }
+        tv.onStyleShortcut = { [weak self] ch in self?.controller?.toggleTextStyle(ch) }
         tv.isRichText = false
         tv.importsGraphics = false
         tv.allowsUndo = true
@@ -460,15 +462,17 @@ final class CanvasView: NSView, NSTextViewDelegate {
         tv.textColor = Win98.color(engine.primary)
         tv.insertionPointColor = Win98.color(engine.primary)
         tv.typingAttributes = attrs
-        if let storage = tv.textStorage, storage.length > 0 {
+        // 変換中（未確定の文字がある間）に書式を全体へかけると変換の下線が消えるので、確定してからかける
+        if !tv.hasMarkedText(), let storage = tv.textStorage, storage.length > 0 {
             storage.setAttributes(attrs, range: NSRange(location: 0, length: storage.length))
         }
         tv.drawsBackground = !engine.options.transparentBackground
         tv.backgroundColor = Win98.color(engine.secondary)
-        positionTextView()
+        fitTextBox()
     }
 
-    func textDidChange(_ notification: Notification) {
+    /// 入力欄の高さに合わせてエンジンの枠を広げ、プレビューの背景と枠をそろえる。
+    private func fitTextBox() {
         guard let tv = textView, var box = engine.textBox else { return }
         tv.sizeToFit()
         let needed = Int((tv.frame.height / zoom).rounded(.up))
@@ -476,10 +480,57 @@ final class CanvasView: NSView, NSTextViewDelegate {
             box.height = needed
             engine.updateTextBox(box)
         }
+        positionTextView()
+    }
+
+    func textDidChange(_ notification: Notification) {
+        guard let tv = textView, let controller = controller else { return }
+        // 取り消しで戻った文字が古い書式のままにならないよう、確定済みの文字は今の書式にそろえる
+        if !tv.hasMarkedText(), let storage = tv.textStorage, storage.length > 0 {
+            let attrs = controller.textStyle.previewAttributes(scale: zoom, color: Win98.color(engine.primary))
+            storage.setAttributes(attrs, range: NSRange(location: 0, length: storage.length))
+        }
+        fitTextBox()
         needsDisplay = true
     }
 
     func undoManager(for view: NSTextView) -> UndoManager? { textUndo }
+
+    /// 右クリックメニューから縦書き・フォントの項目を外す（確定後の見た目と食い違うため）。
+    func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+        func prune(_ m: NSMenu) {
+            for item in m.items.reversed() {
+                if item.action == #selector(NSTextView.changeLayoutOrientation(_:)) {
+                    m.removeItem(item)
+                    continue
+                }
+                if let sub = item.submenu {
+                    if sub.items.contains(where: { $0.action == #selector(NSFontManager.orderFrontFontPanel(_:)) }) {
+                        m.removeItem(item)
+                        continue
+                    }
+                    prune(sub)
+                    if sub.items.allSatisfy({ $0.isSeparatorItem }) { m.removeItem(item) }
+                }
+            }
+        }
+        prune(menu)
+        return menu
+    }
+
+    // MARK: - 編集メニュー（キャンバスが選ばれているとき）
+
+    @objc func undo(_ sender: Any?) { controller?.paintUndo(sender) }
+    @objc func redo(_ sender: Any?) { controller?.paintRedo(sender) }
+    @objc func paste(_ sender: Any?) { controller?.paintPaste(sender) }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard let c = controller else { return false }
+        if menuItem.action == Selector(("undo:")) { return engine.canUndo }
+        if menuItem.action == Selector(("redo:")) { return engine.canRedo }
+        if menuItem.action == #selector(paste(_:)) { return Clipboard.hasImage }
+        return c.validateMenuItem(menuItem)
+    }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {

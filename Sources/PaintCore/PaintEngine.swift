@@ -299,7 +299,8 @@ public final class PaintEngine {
             drag = .airbrush(button: button, at: p)
             changed()
         case .text:
-            guard textBox == nil else { return }
+            // キャンバスの外（灰色の所）には枠を作らない
+            guard textBox == nil, canvas.contains(p.x, p.y) else { return }
             drag = .text(start: p)
             marquee = IRect.spanning(p, p)
             emit(.selection)
@@ -487,6 +488,9 @@ public final class PaintEngine {
             }
             r.width = max(r.width, 24)
             r.height = max(r.height, defaultTextBoxSize.height)
+            // キャンバスからはみ出さないように（はみ出した分は確定時に消えてしまうため）
+            r = r.intersection(canvas.bounds)
+            if r.isEmpty { r = IRect(origin: s, size: ISize(1, 1)).intersection(canvas.bounds) }
             textBox = r
             emit(.selection)
             emit(.textBox)

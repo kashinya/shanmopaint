@@ -696,7 +696,7 @@ final class EngineTests: XCTestCase {
         e.setTool(.text)
         e.mouseDown(at: cp(10, 10), button: .primary)
         e.mouseUp(at: cp(10, 10))
-        XCTAssertEqual(e.textBox, IRect(origin: IPoint(10, 10), size: e.defaultTextBoxSize))
+        XCTAssertEqual(e.textBox, IRect(x: 10, y: 10, width: 90, height: e.defaultTextBoxSize.height), "既定の枠をキャンバス内に収める")
         var glyphs = Bitmap(width: 20, height: 10, fill: Colors.clear)
         glyphs.fill(IRect(x: 0, y: 0, width: 3, height: 3), with: red)
         e.secondary = blue
@@ -932,6 +932,17 @@ final class EngineTests: XCTestCase {
         e.commitText(glyphs, at: IPoint(0, 0), background: IRect(x: 10, y: 10, width: 41, height: 31))
         XCTAssertEqual(e.canvas[10, 10], blue)
         XCTAssertEqual(e.canvas[5, 5], Colors.white, "余白は塗らない")
+    }
+
+    func testTextBoxStaysInsideCanvas() {
+        let e = makeEngine(100, 60)
+        e.setTool(.text)
+        e.mouseDown(at: cp(120, 10), button: .primary)
+        e.mouseUp(at: cp(120, 10))
+        XCTAssertNil(e.textBox, "キャンバスの外には枠を作らない")
+        e.mouseDown(at: cp(90, 50), button: .primary)
+        e.mouseUp(at: cp(90, 50))
+        XCTAssertEqual(e.textBox, IRect(x: 90, y: 50, width: 10, height: 10), "端では収まる大きさに縮める")
     }
 }
 
