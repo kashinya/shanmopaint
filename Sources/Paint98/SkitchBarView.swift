@@ -155,12 +155,16 @@ final class SkitchBarView: NSView {
                 ctx.fillPath()
             }
         case .skitchText:
-            let a = NSAttributedString(string: "A", attributes: [
-                .font: NSFont.systemFont(ofSize: 17, weight: .heavy), .foregroundColor: color,
-                .strokeColor: NSColor.white, .strokeWidth: -3.0,
+            // 白ふちを先に太く描いてから、中を塗る（Skitch の文字の見た目）
+            let font = NSFont.systemFont(ofSize: 18, weight: .black)
+            let outline = NSAttributedString(string: "A", attributes: [
+                .font: font, .foregroundColor: NSColor.white, .strokeColor: NSColor.white, .strokeWidth: 12.0,
             ])
-            let sz = a.size()
-            a.draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2))
+            let fill = NSAttributedString(string: "A", attributes: [.font: font, .foregroundColor: color])
+            let sz = fill.size()
+            let o = NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2)
+            outline.draw(at: o)
+            fill.draw(at: o)
         case .skitchBox:
             let p = NSBezierPath(roundedRect: r.insetBy(dx: 1.5, dy: 2.5), xRadius: 4, yRadius: 4)
             p.lineWidth = 2.5
