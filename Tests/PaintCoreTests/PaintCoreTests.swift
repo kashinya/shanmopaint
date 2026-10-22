@@ -1208,5 +1208,18 @@ final class SkitchTests: XCTestCase {
         XCTAssertEqual(h.undoStack.count, 20, "同じ絵を共有していればメモリを 1 枚分しか数えない")
         XCTAssertFalse(h.droppedOldest)
     }
+
+    func testTextToolOnlyGrabsTextParts() {
+        let e = makeEngine()
+        e.setTool(.skitchBox)
+        drag(e, IPoint(20, 20), IPoint(150, 120))
+        e.deselectAnnotation()
+        e.setTool(.skitchText)
+        // 四角の枠線の上をクリックしても、四角はつかまずに文字の枠ができる
+        click(e, IPoint(22, 60))
+        XCTAssertNotNil(e.textBox)
+        XCTAssertEqual(e.annotations[0].shape, .box(IRect(x: 20, y: 20, width: 131, height: 101)), "四角は動かない")
+        XCTAssertNil(e.selectedAnnotation)
+    }
 }
 

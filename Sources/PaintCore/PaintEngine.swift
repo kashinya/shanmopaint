@@ -406,15 +406,7 @@ public final class PaintEngine {
     private func mouseDownSkitch(at cp: CanvasPoint, clickCount: Int) {
         let p = cp.pixel
         guard textBox == nil else { return }
-        let tol = annotationTolerance
-        // 選んでいる部品のつまみ・本体
-        var hit: (Int, Annotation.Part)?
-        if let i = selectedAnnotation, annotations.indices.contains(i), let part = annotations[i].part(at: cp, tolerance: tol) {
-            hit = (i, part)
-        } else if let i = topAnnotation(at: cp), let part = annotations[i].part(at: cp, tolerance: tol) {
-            hit = (i, part)
-        }
-        if let (i, part) = hit {
+        if let (i, part) = hitAnnotation(at: cp) {
             selectAnnotation(i)
             // 文字はダブルクリック（Skitch の文字ツールならクリック）で打ち直す
             if annotations[i].isText && (clickCount >= 2 || tool == .skitchText) {
@@ -688,20 +680,25 @@ public final class PaintEngine {
 
     /// 部品のどこに当たるか（Skitch の道具のとき。cp はキャンバス座標）。選んでいる部品を優先する。
     public func annotationPart(at cp: CanvasPoint) -> Annotation.Part? {
-        guard tool.isSkitch else { return nil }
-        let tol = annotationTolerance
-        if let i = selectedAnnotation, annotations.indices.contains(i), let p = annotations[i].part(at: cp, tolerance: tol) {
-            return p
-        }
-        if let i = topAnnotation(at: cp) { return annotations[i].part(at: cp, tolerance: tol) }
-        return nil
+        hitAnnotation(at: cp)?.part
     }
 
-    /// cp にあるいちばん上の部品。
-    private func topAnnotation(at cp: CanvasPoint) -> Int? {
+    /// 今の道具でつかめる部品か。文字ツールは文字の部品だけ
+    /// （四角の中や矢印のそばにラベルを書きたいとき、ほかの部品をつかんでしまわないように）。
+    private func canGrab(_ a: Annotation) -> Bool {
+        tool == .skitchText ? a.isText : true
+    }
+
+    /// cp でつかめる部品（選んでいる部品を優先、次にいちばん上の部品）。
+    private func hitAnnotation(at cp: CanvasPoint) -> (index: Int, part: Annotation.Part)? {
+        guard tool.isSkitch else { return nil }
         let tol = annotationTolerance
-        for i in annotations.indices.reversed() where i != editingAnnotation {
-            if annotations[i].part(at: cp, tolerance: tol) != nil { return i }
+        if let i = selectedAnnotation, annotations.indices.contains(i), i != editingAnnotation, canGrab(annotations[i]),
+           let p = annotations[i].part(at: cp, tolerance: tol) {
+            return (i, p)
+        }
+        for i in annotations.indices.reversed() where i != editingAnnotation && canGrab(annotations[i]) {
+            if let p = annotations[i].part(at: cp, tolerance: tol) { return (i, p) }
         }
         return nil
     }
