@@ -134,12 +134,17 @@ public final class PaintEngine {
                             a.shape = .stamp(o.stampKind, center: c, radius: r)
                             a.color = o.stampKind.defaultColor
                         }
-                    case .text(let str, let f, _):
+                    case .text(let str, let f, let oldSize, let wrap):
                         if oldValue.skitchTextSize != o.skitchTextSize {
+                            // 折り返しの幅も文字の大きさに合わせて広げる（行の分かれ方を変えないように）
                             let size = ToolOptions.skitchTextPixels(o.skitchTextSize)
+                            let newWrap = max(1, Int((Double(wrap) * Double(size) / Double(max(1, oldSize))).rounded(.up)))
                             var nf = f
-                            if let m = measure?(str, f.width, size) { nf.height = m.height }
-                            a.shape = .text(str, frame: nf, size: size)
+                            if let m = measure?(str, newWrap, size) {
+                                nf.width = max(1, m.width > 0 ? min(newWrap, m.width + 2) : newWrap)
+                                nf.height = m.height
+                            }
+                            a.shape = .text(str, frame: nf, size: size, wrap: newWrap)
                         }
                     }
                 }
@@ -724,7 +729,7 @@ public final class PaintEngine {
             switch a.shape {
             case .arrow, .box: o.skitchThickness = a.thickness
             case .stamp(let k, _, _): o.stampKind = k
-            case .text(_, _, let size):
+            case .text(_, _, let size, _):
                 if let idx = ToolOptions.skitchTextSizes.firstIndex(of: size) { o.skitchTextSize = idx }
             }
             options = o
@@ -858,13 +863,12 @@ public final class PaintEngine {
 
     /// 置いてある文字を打ち直す。
     private func beginEditingText(_ i: Int) {
-        guard annotations.indices.contains(i), case .text(let str, let frame, _) = annotations[i].shape else { return }
+        guard annotations.indices.contains(i), case .text(let str, let frame, _, let wrap) = annotations[i].shape else { return }
         selectAnnotation(i)
         editingAnnotation = i
         textEditInitial = str
-        // 打ち直しのときは、少なくともクリックで作る枠の幅だけ打てるようにする
-        textBox = fitInsideCanvas(IRect(x: frame.x, y: frame.y, width: max(frame.width, defaultTextBoxSize.width),
-                                        height: max(frame.height, defaultTextBoxSize.height)))
+        // 打ったときと同じ位置・同じ折り返し幅で開く（何も変えずに確定しても形が変わらないように）
+        textBox = IRect(x: frame.x, y: frame.y, width: max(1, wrap), height: max(1, frame.height))
         emit(.textBox)
         emit(.display)
         emit(.selection)
@@ -877,18 +881,18 @@ public final class PaintEngine {
         let before = annotations
         textBox = nil
         let size = ToolOptions.skitchTextPixels(options.skitchTextSize)
-        // 幅は実際に描いた文字の幅にする（短い文字で、入力枠の広い範囲がつかめてしまわないように）。
-        // 1 行ずつの折り返し位置は変わらない（どの行も描いた幅に収まっている）
-        let width = measured.width > 0 ? min(box.width, measured.width + 2) : box.width
+        // 折り返しは入力枠の幅。つかめる範囲は実際に描いた文字の幅にする（短い文字で広い範囲をつかまないように）
+        let wrap = max(1, box.width)
+        let width = measured.width > 0 ? min(wrap, measured.width + 2) : wrap
         let frame = IRect(x: box.x, y: box.y, width: max(1, width), height: max(1, measured.height))
         if let i = editingAnnotation, annotations.indices.contains(i) {
             if text.isEmpty {
                 annotations.remove(at: i)
             } else {
-                annotations[i].shape = .text(text, frame: frame, size: size)
+                annotations[i].shape = .text(text, frame: frame, size: size, wrap: wrap)
             }
         } else if !text.isEmpty {
-            annotations.append(Annotation(shape: .text(text, frame: frame, size: size), color: skitchColor, thickness: 0))
+            annotations.append(Annotation(shape: .text(text, frame: frame, size: size, wrap: wrap), color: skitchColor, thickness: 0))
         }
         editingAnnotation = nil
         textEditInitial = ""
@@ -1184,7 +1188,8 @@ public final class PaintEngine {
     /// 入力に合わせて枠を広げたいときなど。キャンバスからはみ出す分は上へずらす。
     public func updateTextBox(_ r: IRect) {
         guard textBox != nil else { return }
-        textBox = fitInsideCanvas(r)
+        // 置いてある文字の打ち直しでは位置を動かさない（確定したら元の場所のまま）
+        textBox = editingAnnotation != nil ? r : fitInsideCanvas(r)
         emit(.selection)
     }
 
@@ -1233,6 +1238,9 @@ public final class PaintEngine {
     public func redo() {
         endAnnotationDrag(commit: false)
         drag = nil
+        marquee = nil
+        liveSize = nil
+        emit(.selection)
         commitSelection()
         polygon = nil
         curve = nil

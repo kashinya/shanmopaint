@@ -6,8 +6,9 @@ public struct Annotation: Hashable {
         /// 角の丸い太枠の四角
         case box(IRect)
         case stamp(StampKind, center: IPoint, radius: Int)
-        /// 文字。frame は左上と折り返しの幅（高さは描いたときの大きさ）、size は文字の大きさ（ピクセル）
-        case text(String, frame: IRect, size: Int)
+        /// 文字。frame は描いた文字の範囲（つかめる範囲・選択の点線）、size は文字の大きさ（ピクセル）、
+        /// wrap は折り返しの幅（打ったときの入力枠の幅。描画と打ち直しに使う）
+        case text(String, frame: IRect, size: Int, wrap: Int)
     }
 
     /// Skitch の「ビビッとな赤」（矢印・四角・文字の既定色）
@@ -140,7 +141,7 @@ public struct Annotation: Hashable {
         case .arrow: return nil
         case .box(let r): return r
         case .stamp(_, let c, let r): return IRect(x: c.x - r, y: c.y - r, width: 2 * r + 1, height: 2 * r + 1)
-        case .text(_, let f, _): return f
+        case .text(_, let f, _, _): return f
         }
     }
 
@@ -193,7 +194,7 @@ public struct Annotation: Hashable {
             for hp in handles where abs(p.x - hp.x) <= ht && abs(p.y - hp.y) <= ht { return .resize }
             if dist(p, CanvasPoint(c)) <= Double(r) + tolerance { return .body }
             return nil
-        case .text(_, let f, _):
+        case .text(_, let f, _, _):
             // 文字の範囲（ふちの分も少し広めに）
             let m = tolerance + 3
             if p.x >= Double(f.minX) - m && p.x <= Double(f.maxX) + m && p.y >= Double(f.minY) - m && p.y <= Double(f.maxY) + m {
@@ -233,8 +234,8 @@ public struct Annotation: Hashable {
             default:
                 a.shape = .stamp(k, center: IPoint(c.x + dx, c.y + dy), radius: r)
             }
-        case .text(let s, let f, let size):
-            a.shape = .text(s, frame: f.offsetBy(dx: dx, dy: dy), size: size)
+        case .text(let s, let f, let size, let wrap):
+            a.shape = .text(s, frame: f.offsetBy(dx: dx, dy: dy), size: size, wrap: wrap)
         }
         return a
     }

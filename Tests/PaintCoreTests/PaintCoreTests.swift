@@ -866,7 +866,7 @@ final class SkitchTests: XCTestCase {
         case .stamp(_, let c, let rad):
             return RenderedAnnotation(image: Bitmap(width: rad * 2, height: rad * 2, fill: a.color),
                                       origin: IPoint(c.x - rad, c.y - rad))
-        case .text(_, let f, _):
+        case .text(_, let f, _, _):
             return RenderedAnnotation(image: Bitmap(width: f.width, height: f.height, fill: a.color), origin: f.origin)
         }
     }
@@ -1038,7 +1038,7 @@ final class SkitchTests: XCTestCase {
         XCTAssertTrue(e.textBoxIsSkitch)
         e.commitSkitchText("こんにちは", measured: ISize(120, 32))
         XCTAssertEqual(e.annotations.count, 1)
-        guard case .text(let s, let f, let size) = e.annotations[0].shape else { return XCTFail() }
+        guard case .text(let s, let f, let size, _) = e.annotations[0].shape else { return XCTFail() }
         XCTAssertEqual(s, "こんにちは")
         XCTAssertEqual(f.origin, IPoint(20, 20))
         XCTAssertEqual(f.height, 32)
@@ -1052,11 +1052,11 @@ final class SkitchTests: XCTestCase {
         XCTAssertEqual(e.textBox?.origin, IPoint(20, 20))
         XCTAssertEqual(e.renderDisplay()[25, 25], Colors.white, "打ち直している間は元の文字を隠す")
         e.commitSkitchText("こんばんは", measured: ISize(120, 32))
-        guard case .text(let s2, _, _) = e.annotations[0].shape else { return XCTFail() }
+        guard case .text(let s2, _, _, _) = e.annotations[0].shape else { return XCTFail() }
         XCTAssertEqual(s2, "こんばんは")
         XCTAssertEqual(e.annotations.count, 1)
         e.undo()
-        guard case .text(let s3, _, _) = e.annotations[0].shape else { return XCTFail() }
+        guard case .text(let s3, _, _, _) = e.annotations[0].shape else { return XCTFail() }
         XCTAssertEqual(s3, "こんにちは")
     }
 
@@ -1086,7 +1086,7 @@ final class SkitchTests: XCTestCase {
         e.setTool(.arrow)
         click(e, IPoint(25, 25))
         e.options.skitchTextSize = 2
-        guard case .text(_, let f, let size) = e.annotations[0].shape else { return XCTFail() }
+        guard case .text(_, let f, let size, _) = e.annotations[0].shape else { return XCTFail() }
         XCTAssertEqual(size, 40)
         XCTAssertEqual(f.height, 44, "大きさに合わせて測り直す")
     }
@@ -1290,7 +1290,7 @@ final class SkitchTests: XCTestCase {
         e.setTool(.skitchText)
         click(e, IPoint(20, 20))
         e.commitSkitchText("OK", measured: ISize(30, 30))
-        guard case .text(_, let f, _) = e.annotations[0].shape else { return XCTFail() }
+        guard case .text(_, let f, _, _) = e.annotations[0].shape else { return XCTFail() }
         XCTAssertEqual(f.width, 32)
         e.setTool(.arrow)
         XCTAssertNil(e.annotationPart(at: cp(120, 30)), "文字の右の空いた所はつかまない")
@@ -1318,6 +1318,67 @@ final class SkitchTests: XCTestCase {
         e.undo()
         e.undo()
         XCTAssertEqual(e.annotations.count, 2, "元に戻すと戻る")
+    }
+
+    // MARK: 折り返し幅とつかめる幅を分けた
+
+    /// 折り返しを再現する測り方：1 文字の幅は大きさの 0.6 倍、行の高さは大きさ
+    private func wrappingEngine() -> PaintEngine {
+        let e = makeEngine(560, 360)
+        e.textMeasurer = { s, wrap, size in
+            let cw = Double(size) * 0.6, total = Double(s.count) * cw
+            let perLine = max(1, Int(Double(wrap) / cw))
+            let lines = max(1, Int((Double(s.count) / Double(perLine)).rounded(.up)))
+            return ISize(Int(min(total, Double(perLine) * cw).rounded(.up)), lines * size)
+        }
+        return e
+    }
+
+    func testTextSizeUpKeepsLineBreaks() {
+        let e = wrappingEngine()
+        e.setTool(.skitchText)
+        click(e, IPoint(20, 20))
+        // "OK" を中（28px）で：幅 34 ほど、1 行
+        let m = e.textMeasurer!("OK", e.textBox!.width, 28)
+        e.commitSkitchText("OK", measured: m)
+        e.setTool(.arrow)
+        click(e, IPoint(25, 25))
+        e.options.skitchTextSize = 2
+        guard case .text(_, let f, let size, let wrap) = e.annotations[0].shape else { return XCTFail() }
+        XCTAssertEqual(size, 40)
+        XCTAssertEqual(f.height, 40, "大きくしても 1 行のまま（O と K に割れない）")
+        XCTAssertGreaterThan(wrap, 200)
+    }
+
+    func testUnchangedReEditKeepsShapeAndHistory() {
+        let e = wrappingEngine()
+        e.setTool(.skitchText)
+        // 右端の近くに置いた短い文字
+        click(e, IPoint(500, 20))
+        let box = e.textBox!
+        e.commitSkitchText("OK", measured: e.textMeasurer!("OK", box.width, 28))
+        let shape = e.annotations[0].shape
+        let undoBefore = e.canUndo
+        click(e, IPoint(505, 25))
+        XCTAssertNotNil(e.editingAnnotation)
+        e.commitSkitchText("OK", measured: e.textMeasurer!("OK", e.textBox!.width, 28))
+        XCTAssertEqual(e.annotations[0].shape, shape, "何も変えずに確定しても位置・折り返しは変わらない")
+        e.undo()
+        XCTAssertTrue(e.annotations.isEmpty, "変えていない打ち直しは履歴に残らない（1 回の元に戻すで置く前へ）")
+        XCTAssertTrue(undoBefore)
+    }
+
+    func testRedoMidMarqueeClearsMarquee() {
+        let e = makeEngine()
+        e.setTool(.pencil)
+        click(e, IPoint(1, 1))
+        e.undo()
+        e.setTool(.select)
+        e.mouseDown(at: cp(10, 10), button: .primary)
+        e.mouseDragged(to: cp(50, 50))
+        e.redo()
+        XCTAssertNil(e.marquee)
+        XCTAssertNil(e.liveSize)
     }
 }
 

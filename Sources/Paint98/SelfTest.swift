@@ -377,7 +377,7 @@ final class SelfTest {
             }),
             ("文字の打ち直し", {
                 guard let i = self.engine.annotations.lastIndex(where: { $0.isText }),
-                      case .text(_, let f, _) = self.engine.annotations[i].shape else {
+                      case .text(_, let f, _, _) = self.engine.annotations[i].shape else {
                     self.check(false, "文字の部品がある")
                     return
                 }
@@ -393,7 +393,7 @@ final class SelfTest {
                 tv?.insertText("打ち直した文字", replacementRange: NSRange(location: NSNotFound, length: 0))
                 self.snapshot("14-text-reedit")
                 self.c.commitText()
-                if case .text(let s, _, _)? = self.engine.annotations.last(where: { $0.isText })?.shape {
+                if case .text(let s, _, _, _)? = self.engine.annotations.last(where: { $0.isText })?.shape {
                     self.check(s == "打ち直した文字", "文字が書き換わる（\(s)）")
                 } else {
                     self.check(false, "文字の部品が残る")
