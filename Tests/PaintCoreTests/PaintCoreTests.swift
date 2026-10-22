@@ -264,11 +264,13 @@ final class EngineTests: XCTestCase {
         XCTAssertFalse(e.isPristine)
     }
 
-    func testLargerImageCoveringWholeGrownCanvasIsCommittedDirectly() {
+    func testLargerImageOnUsedCanvasStillFloats() {
         let e = makeEngine(50, 50)
         e.resizeCanvas(to: ISize(50, 51))
         let r = e.paste(solid(60, 60, red))
-        XCTAssertFalse(r.floating)
+        XCTAssertTrue(r.floating, "まっさらでないキャンバスでは浮かせる（透明モードも効く）")
+        XCTAssertEqual(e.canvas.size, ISize(60, 60))
+        e.commitSelection()
         XCTAssertEqual(e.canvas, solid(60, 60, red))
     }
 
@@ -812,7 +814,7 @@ final class EngineTests: XCTestCase {
 
     func testArrowFloatsThenCommitsOnNextClick() {
         let e = makeEngine(100, 100)
-        e.annotationRenderer = fakeRenderer
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
         e.primary = red
         e.setTool(.arrow)
         e.mouseDown(at: cp(10, 10), button: .primary)
@@ -841,7 +843,7 @@ final class EngineTests: XCTestCase {
 
     func testArrowBodyDragMoves() {
         let e = makeEngine(100, 100)
-        e.annotationRenderer = fakeRenderer
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
         e.setTool(.arrow)
         e.mouseDown(at: cp(10, 50), button: .primary)
         e.mouseDragged(to: cp(60, 50))
@@ -857,7 +859,7 @@ final class EngineTests: XCTestCase {
 
     func testStampPlaceResizeAndKindChange() {
         let e = makeEngine(200, 200)
-        e.annotationRenderer = fakeRenderer
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
         e.setTool(.stamp)
         e.options.stampKind = .check
         e.mouseDown(at: cp(100, 100), button: .primary)
@@ -883,7 +885,7 @@ final class EngineTests: XCTestCase {
 
     func testStampDragSizesOnPlacement() {
         let e = makeEngine(200, 200)
-        e.annotationRenderer = fakeRenderer
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
         e.setTool(.stamp)
         e.mouseDown(at: cp(50, 50), button: .primary)
         e.mouseDragged(to: cp(80, 60))
@@ -893,7 +895,7 @@ final class EngineTests: XCTestCase {
 
     func testUndoRemovesFloatingAnnotationAndDeleteKey() {
         let e = makeEngine(100, 100)
-        e.annotationRenderer = fakeRenderer
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
         e.setTool(.stamp)
         e.mouseDown(at: cp(50, 50), button: .primary)
         e.mouseUp(at: cp(50, 50))
@@ -911,7 +913,7 @@ final class EngineTests: XCTestCase {
 
     func testPasteCommitsAnnotationFirst() {
         let e = makeEngine(100, 100)
-        e.annotationRenderer = fakeRenderer
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
         e.setTool(.stamp)
         e.mouseDown(at: cp(50, 50), button: .primary)
         e.mouseUp(at: cp(50, 50))
@@ -942,7 +944,136 @@ final class EngineTests: XCTestCase {
         XCTAssertNil(e.textBox, "キャンバスの外には枠を作らない")
         e.mouseDown(at: cp(90, 50), button: .primary)
         e.mouseUp(at: cp(90, 50))
-        XCTAssertEqual(e.textBox, IRect(x: 90, y: 50, width: 10, height: 10), "端では収まる大きさに縮める")
+        XCTAssertEqual(e.textBox, IRect(x: 52, y: 36, width: 48, height: 24), "端では中へずらす（最低限の幅は残す）")
+        e.updateTextBox(IRect(x: 52, y: 36, width: 48, height: 40))
+        XCTAssertEqual(e.textBox, IRect(x: 52, y: 20, width: 48, height: 40), "文字が増えて下にはみ出す分は上へずらす")
+    }
+
+    // MARK: レビュー指摘の再発防止
+
+    func testStampClickOutsideOnlyCommits() {
+        let e = makeEngine(200, 200)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        e.mouseDown(at: cp(150, 150), button: .primary)
+        e.mouseUp(at: cp(150, 150))
+        XCTAssertNil(e.annotation, "外側のクリックは確定だけ")
+        XCTAssertEqual(e.canvas[150, 150], Colors.white)
+        e.mouseDown(at: cp(150, 150), button: .secondary)
+        e.mouseUp(at: cp(150, 150))
+        XCTAssertEqual(e.annotation?.color, StampKind.cross.defaultColor, "右クリックでも白くならない")
+    }
+
+    func testDeletedAnnotationCanBeUndone() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        e.deleteAnnotation()
+        XCTAssertEqual(e.canvas[50, 50], Colors.white)
+        e.undo()
+        XCTAssertEqual(e.canvas[50, 50], StampKind.cross.defaultColor, "消す直前の見た目に戻る")
+    }
+
+    func testSwapColorsKeepsAnnotationColor() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        e.swapColors()
+        XCTAssertEqual(e.annotation?.color, StampKind.cross.defaultColor)
+        e.primary = blue
+        XCTAssertEqual(e.annotation?.color, blue, "パレットでの色変更は効く")
+    }
+
+    func testRedoDisabledWhileAnnotationFloats() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.pencil)
+        e.mouseDown(at: cp(1, 1), button: .primary)
+        e.mouseUp(at: cp(1, 1))
+        e.undo()
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        XCTAssertFalse(e.canRedo)
+        e.redo()
+        XCTAssertNotNil(e.annotation, "やり直しで注釈を勝手に確定しない")
+    }
+
+    func testTransformCommitsAnnotationFirst() {
+        let e = makeEngine(100, 50)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(20, 20), button: .primary)
+        e.mouseUp(at: cp(20, 20))
+        e.rotateClockwise()
+        XCTAssertNil(e.annotation)
+        XCTAssertEqual(e.canvas.size, ISize(50, 100))
+        XCTAssertEqual(e.canvas[50 - 1 - 20, 20], StampKind.cross.defaultColor, "注釈ごと回る")
+    }
+
+    func testAnnotationMarksDocumentModified() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.load(solid(100, 100, Colors.white))
+        XCTAssertFalse(e.isModified)
+        e.setTool(.stamp)
+        e.mouseDown(at: cp(50, 50), button: .primary)
+        e.mouseUp(at: cp(50, 50))
+        XCTAssertTrue(e.isModified, "浮いている注釈だけでも保存の確認が要る")
+        e.markSaved()
+        e.commitAnnotation()
+        XCTAssertFalse(e.isModified, "保存直後の確定は変更扱いにしない")
+    }
+
+    func testTransparencyChangeUnderFloatingPasteMarksModified() {
+        let e = makeEngine(50, 50)
+        e.resizeCanvas(to: ISize(50, 51))
+        e.paste(solid(10, 10, red), at: IPoint(5, 5), growCanvas: true)
+        e.markSaved()
+        e.options.transparentBackground = true
+        XCTAssertTrue(e.isModified)
+    }
+
+    func testPasteAtNegativeOriginEmitsCanvasSize() {
+        let e = makeEngine(20, 20)
+        e.resizeCanvas(to: ISize(20, 21))
+        var events: [EngineEvent] = []
+        e.listener = { events.append($0) }
+        e.paste(solid(10, 10, red), at: IPoint(-5, 0), growCanvas: true)
+        XCTAssertTrue(events.contains(.canvasSize))
+    }
+
+    func testPasteAtOnHugeCanvasThatFits() {
+        let e = makeEngine(10, 10)
+        e.load(Bitmap(width: 12_000, height: 20))
+        XCTAssertNotNil(e.paste(solid(5, 5, red), at: IPoint(100, 2), growCanvas: true))
+    }
+
+    func testShortArrowAdjustRestoresOriginal() {
+        let e = makeEngine(100, 100)
+        e.annotationRenderer = { a, _ in self.fakeRenderer(a) }
+        e.setTool(.arrow)
+        e.mouseDown(at: cp(10, 10), button: .primary)
+        e.mouseDragged(to: cp(60, 10))
+        e.mouseUp(at: cp(60, 10))
+        e.mouseDown(at: cp(60, 10), button: .primary)
+        e.mouseDragged(to: cp(12, 10))
+        e.mouseUp(at: cp(12, 10))
+        XCTAssertEqual(e.annotation?.shape, .arrow(tail: IPoint(10, 10), head: IPoint(60, 10)), "縮めすぎたら元に戻す")
+    }
+
+    func testArrowHitTestFollowsShape() {
+        let a = Annotation(shape: .arrow(tail: IPoint(0, 50), head: IPoint(200, 50)), color: red, thickness: 2)
+        XCTAssertEqual(a.part(at: CanvasPoint(100.5, 50.5), tolerance: 5), .body)
+        XCTAssertNil(a.part(at: CanvasPoint(100.5, 64.5), tolerance: 5), "細い軸のすぐ横は新しい矢印を引ける")
+        XCTAssertNil(a.part(at: CanvasPoint(230.5, 50.5), tolerance: 5), "先端の先は当たらない")
+        XCTAssertEqual(a.part(at: CanvasPoint(190.5, 58.5), tolerance: 5), .body, "頭の幅の中は当たる")
     }
 }
 

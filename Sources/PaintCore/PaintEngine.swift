@@ -72,17 +72,25 @@ public final class PaintEngine {
         didSet {
             emit(.colors)
             if selection != nil && options.transparentBackground { emit(.display) }
-            if annotation != nil && primary != oldValue { annotation!.color = primary; emit(.display) }
+            if annotation != nil && primary != oldValue && !swappingColors { annotation!.color = primary; emit(.display) }
         }
     }
     public var secondary: Pixel = Colors.white {
-        didSet { emit(.colors); if selection != nil && options.transparentBackground { emit(.display) } }
+        didSet {
+            emit(.colors)
+            if selection != nil && options.transparentBackground { emit(.display) }
+            // 透明モードで浮いている画像は、背景色が変わると確定したときの結果が変わる
+            if selection?.lifted == true && options.transparentBackground && secondary != oldValue { markModified() }
+        }
     }
     public private(set) var tool: Tool = .pencil
     public private(set) var previousTool: Tool = .pencil
     public var options = ToolOptions() {
         didSet {
-            if oldValue.transparentBackground != options.transparentBackground { emit(.display) }
+            if oldValue.transparentBackground != options.transparentBackground {
+                emit(.display)
+                if selection?.lifted == true { markModified() }
+            }
             if var a = annotation {
                 switch a.shape {
                 case .arrow:
@@ -122,10 +130,16 @@ public final class PaintEngine {
     public private(set) var liveSize: ISize?
     /// 浮いている注釈（矢印・スタンプ）。
     public private(set) var annotation: Annotation? {
-        didSet { if annotation != oldValue { renderedAnnotation = nil } }
+        didSet {
+            guard annotation != oldValue else { return }
+            renderedAnnotation = nil
+            // 浮いている注釈も作品の一部：閉じるときに保存を確認する
+            if annotation != nil { markModified() }
+        }
     }
-    /// 注釈を画像にする関数（UI が CoreGraphics で描く）。nil なら注釈は表示も確定もされない。
-    public var annotationRenderer: ((Annotation) -> RenderedAnnotation?)? {
+    /// 注釈を画像にする関数（UI が CoreGraphics で描く）。2 つめの引数はキャンバスの範囲で、これより外は描かなくてよい。
+    /// nil なら注釈は表示も確定もされない。
+    public var annotationRenderer: ((Annotation, IRect) -> RenderedAnnotation?)? {
         didSet { renderedAnnotation = nil }
     }
 
@@ -138,6 +152,7 @@ public final class PaintEngine {
     private var polygon: PolygonState?
     private var curve: CurveState?
     private var renderedAnnotation: RenderedAnnotation?
+    private var swappingColors = false
 
     private enum Drag {
         case stroke(button: MouseButton, last: IPoint)
@@ -151,7 +166,7 @@ public final class PaintEngine {
         case text(start: IPoint)
         case polygonSegment
         case curvePoint
-        case annotation(part: Annotation.Part, start: CanvasPoint, original: Annotation)
+        case annotation(part: Annotation.Part, start: CanvasPoint, original: Annotation, isNew: Bool)
         case stampPlace(center: IPoint)
     }
 
@@ -178,7 +193,7 @@ public final class PaintEngine {
     // MARK: - 状態
 
     public var canUndo: Bool { history.canUndo || selection?.recorded == true || annotation != nil }
-    public var canRedo: Bool { history.canRedo }
+    public var canRedo: Bool { history.canRedo && annotation == nil }
     public var hasSelection: Bool { selection != nil }
     public var isAirbrushing: Bool {
         if case .airbrush? = drag { return true }
@@ -229,9 +244,12 @@ public final class PaintEngine {
     }
 
     public func swapColors() {
+        // 入れ替えで浮いている注釈の色まで変えない（スタンプが白くなってしまう）
+        swappingColors = true
         let p = primary
         primary = secondary
         secondary = p
+        swappingColors = false
     }
 
     // MARK: - マウス
@@ -330,20 +348,22 @@ public final class PaintEngine {
         case .arrow, .stamp:
             if let a = annotation {
                 if let part = annotationPart(at: cp) {
-                    drag = .annotation(part: part, start: cp, original: a)
+                    drag = .annotation(part: part, start: cp, original: a, isNew: false)
                     emit(.selection)
                     return
                 }
                 commitAnnotation()
+                // スタンプは外側のクリックで確定するだけ（次のスタンプはもう一度クリック）
+                if tool == .stamp { return }
             }
             if tool == .arrow {
                 let a = Annotation(shape: .arrow(tail: p, head: p), color: fg, thickness: options.arrowThickness)
                 annotation = a
-                drag = .annotation(part: .head, start: cp, original: a)
+                drag = .annotation(part: .head, start: cp, original: a, isNew: true)
             } else {
                 let k = options.stampKind
                 annotation = Annotation(shape: .stamp(k, center: p, radius: Annotation.defaultStampRadius),
-                                        color: button == .primary ? k.defaultColor : secondary, thickness: 0)
+                                        color: k.defaultColor, thickness: 0)
                 drag = .stampPlace(center: p)
             }
             emit(.selection)
@@ -425,7 +445,7 @@ public final class PaintEngine {
             }
             curve = c
             updateCurveOverlay()
-        case .annotation(let part, let start, let original):
+        case .annotation(let part, let start, let original, _):
             let dx = Int((cp.x - start.x).rounded()), dy = Int((cp.y - start.y).rounded())
             annotation = original.adjusted(part, dx: dx, dy: dy, pointer: p, constrain: shift)
             emit(.selection)
@@ -488,10 +508,7 @@ public final class PaintEngine {
             }
             r.width = max(r.width, 24)
             r.height = max(r.height, defaultTextBoxSize.height)
-            // キャンバスからはみ出さないように（はみ出した分は確定時に消えてしまうため）
-            r = r.intersection(canvas.bounds)
-            if r.isEmpty { r = IRect(origin: s, size: ISize(1, 1)).intersection(canvas.bounds) }
-            textBox = r
+            textBox = fitInsideCanvas(r)
             emit(.selection)
             emit(.textBox)
         case .polygonSegment:
@@ -522,12 +539,14 @@ public final class PaintEngine {
             default:
                 commitCurve()
             }
-        case .annotation, .stampPlace:
-            // ドラッグせずにクリックしただけの矢印は置かない
-            if let a = annotation, case .arrow = a.shape, a.arrowLength < 4 {
-                annotation = nil
+        case .annotation(_, _, let original, let isNew):
+            if let a = annotation, case .arrow = a.shape, a.arrowLength < Annotation.minArrowLength {
+                // 新しく引こうとしてほとんど動かさなかった矢印は置かない。置いてある矢印を縮めすぎたら元に戻す
+                annotation = isNew ? nil : original
                 emit(.display)
             }
+            emit(.selection)
+        case .stampPlace:
             emit(.selection)
         }
     }
@@ -560,22 +579,30 @@ public final class PaintEngine {
     }
 
     /// 浮いている注釈をキャンバスに焼き込む。
+    /// 変更済みの印は置いた・動かした時点で付けているので、ここでは付けない（保存直後の確定で「変更あり」にしない）。
     public func commitAnnotation() {
         guard let a = annotation else { return }
         annotation = nil
         if let r = renderAnnotation(a) {
             history.push(canvas)
             canvas.drawPremultiplied(r.image, at: r.origin)
-            changed()
+            isPristine = false
         }
         emit(.selection)
         emit(.display)
+        emit(.history)
     }
 
-    /// 浮いている注釈を消す（delete キー）。
+    /// 浮いている注釈を消す（delete キー）。元に戻すと消す直前の見た目に戻る。
     public func deleteAnnotation() {
-        guard annotation != nil else { return }
+        guard let a = annotation else { return }
         annotation = nil
+        if let r = renderAnnotation(a) {
+            var before = canvas
+            before.drawPremultiplied(r.image, at: r.origin)
+            history.push(before)
+            changed()
+        }
         emit(.selection)
         emit(.display)
     }
@@ -589,7 +616,7 @@ public final class PaintEngine {
 
     private func renderAnnotation(_ a: Annotation) -> RenderedAnnotation? {
         if a == annotation, let r = renderedAnnotation { return r }
-        let r = annotationRenderer?(a)
+        let r = annotationRenderer?(a, canvas.bounds)
         if a == annotation { renderedAnnotation = r }
         return r
     }
@@ -685,8 +712,8 @@ public final class PaintEngine {
         let plan = PastePlacement.plan(image: image.size, canvas: canvas.size, pristine: isPristine,
                                        fitWhenPristine: fitCanvasToPasteWhenPristine, visibleOrigin: visibleOrigin)
         let frame = IRect(origin: plan.origin, size: image.size)
-        if plan.origin == IPoint(0, 0) && plan.canvas == image.size {
-            // キャンバス全体を覆う：浮かせるとドラッグで画像ごと動いてしまうので、すぐ確定する
+        if isPristine && fitCanvasToPasteWhenPristine && plan.origin == IPoint(0, 0) && plan.canvas == image.size {
+            // まっさらなキャンバスを画像に合わせた：浮かせるとドラッグで画像ごと動いてしまうので、すぐ確定する
             history.push(canvas)
             var img = image
             img.makeOpaque()
@@ -713,7 +740,7 @@ public final class PaintEngine {
             let maxX = max(canvas.width, frame.maxX), maxY = max(canvas.height, frame.maxY)
             size = ISize(maxX - minX, maxY - minY)
             shift = IPoint(-minX, -minY)
-            let limit = max(Self.maxCanvasSide, image.width, image.height)
+            let limit = max(Self.maxCanvasSide, canvas.width, canvas.height, image.width, image.height)
             if size.width > limit || size.height > limit { return nil }
         }
         finalizePending()
@@ -722,6 +749,7 @@ public final class PaintEngine {
             var grown = Bitmap(width: size.width, height: size.height, fill: secondary)
             grown.draw(canvas, at: shift)
             canvas = grown
+            emit(.canvasSize)
             frame = frame.offsetBy(dx: shift.x, dy: shift.y)
             placePaste(image, canvasSize: size, origin: frame.origin, pushHistory: false)
         } else {
@@ -856,11 +884,23 @@ public final class PaintEngine {
         emit(.textBox)
     }
 
-    /// 入力に合わせて枠を広げたいときなど。
+    /// 入力に合わせて枠を広げたいときなど。キャンバスからはみ出す分は上へずらす。
     public func updateTextBox(_ r: IRect) {
         guard textBox != nil else { return }
-        textBox = r
+        textBox = fitInsideCanvas(r)
         emit(.selection)
+    }
+
+    /// テキスト枠をキャンバスの中に収める（はみ出した分は確定時に消えてしまうため）。
+    /// 右端では最低限の幅を残して左へ、下端では上へずらす。
+    private func fitInsideCanvas(_ r: IRect) -> IRect {
+        var b = r
+        let minWidth = min(canvas.width, 48)
+        b.width = min(max(min(b.width, canvas.width - b.x), minWidth), canvas.width)
+        b.height = min(b.height, canvas.height)
+        b.x = max(0, min(b.x, canvas.width - b.width))
+        b.y = max(0, min(b.y, canvas.height - b.height))
+        return b
     }
 
     // MARK: - 元に戻す
@@ -897,7 +937,7 @@ public final class PaintEngine {
     }
 
     public func redo() {
-        commitAnnotation()
+        guard annotation == nil else { return }
         commitSelection()
         polygon = nil
         curve = nil
@@ -922,6 +962,12 @@ public final class PaintEngine {
 
     private func emitAll() {
         for e in [EngineEvent.canvasSize, .display, .selection, .textBox, .history, .tool, .colors] { emit(e) }
+    }
+
+    private func markModified() {
+        guard !isModified else { return }
+        isModified = true
+        emit(.history)
     }
 
     private func changed() {
@@ -1026,6 +1072,7 @@ public final class PaintEngine {
     }
 
     private func transform(geometric: Bool, _ f: (Bitmap) -> Bitmap) {
+        commitAnnotation()
         if polygon != nil { closePolygon() }
         if curve != nil { commitCurve() }
         if selection != nil {

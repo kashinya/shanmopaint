@@ -88,6 +88,9 @@ struct TextStyle: Equatable {
                 let full = NSRange(location: 0, length: storage.length)
                 storage.addAttributes([.strokeColor: NSColor.white, .strokeWidth: (ow * 2) / max(1, self.size) * 100], range: full)
                 ctx.setShadow(offset: CGSize(width: 0, height: -2), blur: 4, color: NSColor(white: 0, alpha: 0.45).cgColor)
+                // 角の尖った字（A・V・かなのはらい等）で白ふちがトゲにならないよう丸める
+                ctx.setLineJoin(.round)
+                ctx.setLineCap(.round)
                 ctx.beginTransparencyLayer(auxiliaryInfo: nil)
                 layout.drawGlyphs(forGlyphRange: glyphs, at: origin)
                 // 2 回目：本体の塗り
@@ -127,7 +130,7 @@ final class PaintTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
         if flags == .command, let ch = event.charactersIgnoringModifiers?.lowercased(),
            ["b", "i", "u"].contains(ch), let f = onStyleShortcut {
             f(ch)

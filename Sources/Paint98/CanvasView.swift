@@ -34,8 +34,12 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    // アプリが前面にあるときは、フォントパネル等から戻った最初のクリックでも描ける
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { NSApp.isActive }
+    // フォントパネルなど自分のパネルから戻った最初のクリックでは描ける。
+    // ほかのアプリから戻ったクリックでは描かない（うっかり塗りつぶし等をしないように）
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        guard let kw = NSApp.keyWindow else { return false }
+        return kw !== window && kw is NSPanel
+    }
     override var isOpaque: Bool { true }
 
     // MARK: - 座標
@@ -526,8 +530,9 @@ final class CanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let c = controller else { return false }
-        if menuItem.action == #selector(undo(_:)) { return engine.canUndo }
-        if menuItem.action == #selector(redo(_:)) { return engine.canRedo }
+        // 文字の入力中は入力欄の取り消し履歴も見る
+        if menuItem.action == #selector(undo(_:)) { return engine.canUndo || textView?.undoManager?.canUndo == true }
+        if menuItem.action == #selector(redo(_:)) { return engine.canRedo || textView?.undoManager?.canRedo == true }
         if menuItem.action == #selector(paste(_:)) { return Clipboard.hasImage }
         return c.validateMenuItem(menuItem)
     }

@@ -272,9 +272,9 @@ enum OptionsLayout {
             return zip(rows(3), ToolOptions.arrowThicknesses).map { rr, t in
                 Item(rect: rr, selected: o.arrowThickness == t, draw: { rect, sel in
                     guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-                    let w = CGFloat(Annotation.arrowWidth(t)) * 0.55
+                    // 小さな見本なので、太さ 1〜3 を少し控えめに見せる
                     if let path = AnnotationRenderer.arrowPath(tail: CGPoint(x: rect.minX + 4, y: rect.midY),
-                                                               head: CGPoint(x: rect.maxX - 4, y: rect.midY), width: w) {
+                                                               head: CGPoint(x: rect.maxX - 4, y: rect.midY), thickness: max(1, t - 1)) {
                         ctx.addPath(path)
                         ctx.setFillColor((sel ? Win98.highlight : Win98.text).cgColor)
                         ctx.fillPath()

@@ -27,6 +27,27 @@ public struct Annotation: Equatable {
 
     public static let defaultStampRadius = 22
     public static let minStampRadius = 8
+    /// これより短い矢印は置かない（クリックしただけ・ほとんど動かさなかったとき）。
+    public static let minArrowLength = 10.0
+
+    /// 矢印の形の寸法。描画と当たり判定で同じものを使う。
+    public struct ArrowGeometry {
+        /// 軸の太さ（短い矢印では細くする）
+        public var width: Double
+        public var headLength: Double
+        public var headHalfWidth: Double
+        public var tailHalfWidth: Double
+        /// 白いふちの太さ
+        public var outline: Double
+    }
+
+    public static func arrowGeometry(length: Double, thickness: Int) -> ArrowGeometry {
+        let w = min(arrowWidth(thickness), max(1.5, length / 4))
+        let headLen = min(w * 3.3, length * 0.65)
+        let headHalf = max(w * 1.8, headLen * 0.58)
+        return ArrowGeometry(width: w, headLength: headLen, headHalfWidth: headHalf,
+                             tailHalfWidth: max(0.8, w * 0.16), outline: max(2, (w * 0.32).rounded()))
+    }
 
     /// どこをつまんだか。
     public enum Part: Equatable {
@@ -56,16 +77,27 @@ public struct Annotation: Equatable {
             let tp = CanvasPoint(t), hp = CanvasPoint(h)
             if dist(p, hp) <= tolerance + 2 { return .head }
             if dist(p, tp) <= tolerance + 2 { return .tail }
-            // 軸からの距離
+            // 実際の形（根元が細く、頭が太い）に沿った当たり判定
             let vx = hp.x - tp.x, vy = hp.y - tp.y
-            let len2 = vx * vx + vy * vy
-            let t0 = len2 > 0 ? max(0, min(1, ((p.x - tp.x) * vx + (p.y - tp.y) * vy) / len2)) : 0
-            let q = CanvasPoint(tp.x + vx * t0, tp.y + vy * t0)
-            let half = Self.arrowWidth(thickness) * (t0 > 0.6 ? 1.6 : 0.6)
-            if dist(p, q) <= half + tolerance { return .body }
+            let len = (vx * vx + vy * vy).squareRoot()
+            guard len > 0 else { return nil }
+            let along = ((p.x - tp.x) * vx + (p.y - tp.y) * vy) / len
+            if along < -tolerance || along > len + tolerance { return nil }
+            let a = max(0, min(len, along))
+            let q = CanvasPoint(tp.x + vx * a / len, tp.y + vy * a / len)
+            let g = Self.arrowGeometry(length: len, thickness: thickness)
+            let half: Double
+            if a >= len - g.headLength {
+                half = g.headHalfWidth * (len - a) / max(1, g.headLength)
+            } else {
+                half = g.tailHalfWidth + (g.width / 2 - g.tailHalfWidth) * a / max(1, len - g.headLength)
+            }
+            if dist(p, q) <= half + g.outline + tolerance { return .body }
             return nil
         case .stamp(_, let c, let r):
-            for hp in handles where abs(p.x - hp.x) <= tolerance && abs(p.y - hp.y) <= tolerance { return .resize }
+            // 縮小表示でも本体をつかめるよう、角の当たり判定はスタンプの大きさに対して控えめにする
+            let ht = min(tolerance, max(2, Double(r) * 0.35))
+            for hp in handles where abs(p.x - hp.x) <= ht && abs(p.y - hp.y) <= ht { return .resize }
             if dist(p, CanvasPoint(c)) <= Double(r) + tolerance { return .body }
             return nil
         }

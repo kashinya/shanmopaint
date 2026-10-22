@@ -7,27 +7,30 @@ enum AnnotationRenderer {
     static let shadowOffset = CGSize(width: 0, height: -2) // ビットマップの基準座標は y が上向きなので、下へずらす
     static let shadowBlur: CGFloat = 4
 
-    static func render(_ a: Annotation) -> RenderedAnnotation? {
+    /// clip（キャンバスの範囲）の外は描かない。大きな画像で矢印を引きずっても重くならないように。
+    static func render(_ a: Annotation, clip: IRect) -> RenderedAnnotation? {
         switch a.shape {
         case .arrow(let t, let h):
-            return renderArrow(tail: t, head: h, color: a.color, thickness: a.thickness)
+            return renderArrow(tail: t, head: h, color: a.color, thickness: a.thickness, clip: clip)
         case .stamp(let kind, let c, let r):
-            return renderStamp(kind, center: c, radius: r, color: a.color)
+            return renderStamp(kind, center: c, radius: r, color: a.color, clip: clip)
         }
     }
 
     // MARK: - 矢印
 
-    /// 根元が細く先へ太くなる軸と、大きな三角の頭。
-    static func arrowPath(tail: CGPoint, head: CGPoint, width w: CGFloat) -> CGPath? {
+    /// 根元が細く先へ太くなる軸と、大きな三角の頭。寸法は当たり判定と同じ Annotation.arrowGeometry。
+    static func arrowPath(tail: CGPoint, head: CGPoint, thickness: Int) -> CGPath? {
         let dx = head.x - tail.x, dy = head.y - tail.y
         let len = (dx * dx + dy * dy).squareRoot()
         guard len >= 1 else { return nil }
+        let g = Annotation.arrowGeometry(length: Double(len), thickness: thickness)
         let ux = dx / len, uy = dy / len
         let nx = -uy, ny = ux
-        let headLen = min(w * 3.3, len * 0.65)
-        let headHalf = max(w * 1.8, headLen * 0.58)
-        let tailHalf = max(0.8, w * 0.16)
+        let w = CGFloat(g.width)
+        let headLen = CGFloat(g.headLength)
+        let headHalf = CGFloat(g.headHalfWidth)
+        let tailHalf = CGFloat(g.tailHalfWidth)
         let neck = CGPoint(x: head.x - ux * headLen, y: head.y - uy * headLen)
         // 頭の付け根を少しへこませて Skitch っぽく
         let notch = CGPoint(x: neck.x + ux * headLen * 0.12, y: neck.y + uy * headLen * 0.12)
@@ -46,13 +49,13 @@ enum AnnotationRenderer {
         return p
     }
 
-    static func renderArrow(tail: IPoint, head: IPoint, color: Pixel, thickness: Int) -> RenderedAnnotation? {
-        let w = CGFloat(Annotation.arrowWidth(thickness))
+    static func renderArrow(tail: IPoint, head: IPoint, color: Pixel, thickness: Int, clip: IRect) -> RenderedAnnotation? {
         let t = CGPoint(x: CGFloat(tail.x) + 0.5, y: CGFloat(tail.y) + 0.5)
         let h = CGPoint(x: CGFloat(head.x) + 0.5, y: CGFloat(head.y) + 0.5)
-        guard let path = arrowPath(tail: t, head: h, width: w) else { return nil }
-        let outline = max(2, (w * 0.32).rounded())
-        return draw(bounds: path.boundingBox, margin: outline + shadowBlur + 4) { ctx in
+        guard let path = arrowPath(tail: t, head: h, thickness: thickness) else { return nil }
+        let dx = Double(head.x - tail.x), dy = Double(head.y - tail.y)
+        let outline = CGFloat(Annotation.arrowGeometry(length: (dx * dx + dy * dy).squareRoot(), thickness: thickness).outline)
+        return draw(bounds: path.boundingBox, margin: outline + shadowBlur + 4, clip: clip) { ctx in
             ctx.setShadow(offset: shadowOffset, blur: shadowBlur, color: shadowColor)
             ctx.beginTransparencyLayer(auxiliaryInfo: nil)
             ctx.addPath(path)
@@ -69,11 +72,11 @@ enum AnnotationRenderer {
 
     // MARK: - スタンプ
 
-    static func renderStamp(_ kind: StampKind, center: IPoint, radius: Int, color: Pixel) -> RenderedAnnotation? {
+    static func renderStamp(_ kind: StampKind, center: IPoint, radius: Int, color: Pixel, clip: IRect) -> RenderedAnnotation? {
         let r = CGFloat(max(4, radius))
         let c = CGPoint(x: CGFloat(center.x) + 0.5, y: CGFloat(center.y) + 0.5)
         let box = CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
-        return draw(bounds: box, margin: shadowBlur + 6) { ctx in
+        return draw(bounds: box, margin: shadowBlur + 6, clip: clip) { ctx in
             drawStamp(kind, in: ctx, center: c, radius: r, color: Win98.color(color).cgColor)
         }
     }
@@ -161,9 +164,11 @@ enum AnnotationRenderer {
 
     // MARK: - 共通
 
-    /// bounds（キャンバス座標）を margin だけ広げた範囲に描いて、乗算済みの画像にする。
-    private static func draw(bounds: CGRect, margin: CGFloat, _ body: (CGContext) -> Void) -> RenderedAnnotation? {
-        let r = bounds.insetBy(dx: -margin, dy: -margin).integral
+    /// bounds（キャンバス座標）を margin だけ広げた範囲のうち、clip に入る部分だけを描いて乗算済みの画像にする。
+    private static func draw(bounds: CGRect, margin: CGFloat, clip: IRect, _ body: (CGContext) -> Void) -> RenderedAnnotation? {
+        let clipRect = CGRect(x: clip.x, y: clip.y, width: clip.width, height: clip.height)
+        let r = bounds.insetBy(dx: -margin, dy: -margin).integral.intersection(clipRect)
+        guard !r.isNull, !r.isEmpty else { return nil }
         let w = Int(r.width), h = Int(r.height)
         guard w > 0, h > 0, w < 20000, h < 20000 else { return nil }
         guard let img = BitmapIO.renderPremultiplied(width: w, height: h, antialias: true, { ctx in

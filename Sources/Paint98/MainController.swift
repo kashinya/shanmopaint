@@ -57,7 +57,7 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
         mainView.colorBox.onPick = { [weak self] in self?.editingPaletteIndex = nil }
         mainView.colorBox.onHover = { [weak self] s in self?.statusBar.hint = s }
         engine.listener = { [weak self] e in self?.handle(e) }
-        engine.annotationRenderer = AnnotationRenderer.render
+        engine.annotationRenderer = { a, clip in AnnotationRenderer.render(a, clip: clip) }
         engine.fitCanvasToPasteWhenPristine = UserDefaults.standard.object(forKey: "fitCanvasToPaste") as? Bool ?? true
 
         updateTitle()
@@ -427,12 +427,11 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
             engine.load(b)
             fileURL = url
             fileFormat = BitmapIO.Format.from(url: url)
-            if fileFormat == nil {
-                statusBar.hint = "\(url.lastPathComponent) は上書き保存できない形式なので、保存するときは名前を付けて保存します。"
-            }
             updateTitle()
             setZoom(1, center: IPoint(0, 0))
-            if fileFormat != nil { statusBar.hint = "\(url.lastPathComponent)（\(b.width)×\(b.height)）を開きました。" }
+            statusBar.hint = fileFormat == nil
+                ? "\(url.lastPathComponent) は上書き保存できない形式なので、保存するときは名前を付けて保存します。"
+                : "\(url.lastPathComponent)（\(b.width)×\(b.height)）を開きました。"
             return true
         } catch {
             Dialogs.error(error.localizedDescription, window: window)
@@ -529,7 +528,8 @@ final class MainController: NSObject, NSWindowDelegate, NSMenuItemValidation {
 
     /// 変更を捨ててよいか確かめる。続けてよければ true。
     func confirmDiscard() -> Bool {
-        guard engine.isModified else { return true }
+        // 描きかけの多角形・曲線や浮いている矢印・スタンプも、失う前に確認する
+        guard engine.isModified || engine.hasPendingShape else { return true }
         let name = fileURL?.lastPathComponent ?? "無題"
         let a = NSAlert()
         a.messageText = "\(name) への変更を保存しますか?"
